@@ -1,0 +1,23 @@
+{
+  "name": "mesh-playback",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Remotely play/control white noise on old iPhones/iPads via web tech on the home LAN.",
+  "scripts": {
+    "bake": "node pipeline/bake.js",
+    "start": "node hub/server.js",
+    "dev": "node hub/server.js",
+    "test": "node --test test/*.test.js",
+    "test:e2e": "playwright test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}

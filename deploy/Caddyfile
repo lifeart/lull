@@ -1,0 +1,37 @@
+# TLS termination for the hub. HTTPS is REQUIRED for service workers / audioSession / wake lock
+# on the phones (http://<lan-ip> is not a secure context). (docs/DESIGN.md §1.6)
+#
+# This file ships with a DEFAULT that works on first boot with the stock `caddy:2` image so you
+# never get a dead 443 port. Pick ONE tls line below.
+
+{$MP_DOMAIN} {
+	encode zstd gzip
+
+	# --- DEFAULT: Caddy's internal CA (self-signed). Works immediately with stock caddy:2 and a
+	# LAN-only domain — 443 serves HTTPS right away. One-time cost: install Caddy's root CA on each
+	# device (Settings → General → About → Certificate Trust, or fetch it from the hub) to clear the
+	# warning. Fine for 1–2 personal devices; for a zero-device-install setup use DNS-01 below.
+	tls internal
+
+	# --- RECOMMENDED for many/old devices: Let's Encrypt DNS-01 wildcard → publicly trusted, NO
+	# per-device cert install, works down to iOS 12. Requires a Caddy image that bundles your DNS
+	# provider plugin (stock caddy:2 does NOT have it). Steps:
+	#   1. In docker-compose.yml, replace `image: caddy:2` with a DNS-enabled build, e.g.
+	#      `image: ghcr.io/caddy-dns/caddy-cloudflare:latest` (or build one per Caddy's docs).
+	#   2. Comment out `tls internal` above and uncomment the block below.
+	#   3. Set MP_DNS_TOKEN in deploy/.env to a scoped provider token with DNS-edit rights.
+	# tls {
+	# 	dns cloudflare {$MP_DNS_TOKEN}
+	# }
+	# For a wildcard covering per-room subdomains, request *.{$MP_DOMAIN} the same way.
+
+	# Preserve Range/206 for audio — critical for iOS background playback.
+	reverse_proxy hub:8080 {
+		flush_interval -1
+	}
+}
+
+# --- Alternative: Tailscale (*.ts.net), iOS 15+ only, zero DNS setup ---
+# your-host.your-tailnet.ts.net {
+# 	reverse_proxy hub:8080
+# }

@@ -1,0 +1,307 @@
+// Real-browser end-to-end (drives the actual player.js + audio.js + controller.js + hub).
+// Covers the paths the node/ws tests can't: real arming, the MODERN GainNode path, the
+// hub-owned sleep timer stopping on-device, the parent-phone offline alarm, and soundscapes.
+
+import { test, expect } from '@playwright/test';
+import { WebSocket } from 'ws';
+import { readFileSync } from 'node:fs';
+import { makeHello, makeCommand, ROLES, VERBS } from '../shared/protocol.js';
+
+const PORT = 8090;
+
+async function armPlayer(page, name, { modern = false } = {}) {
+  if (modern) {
+    // Make detectCaps() see navigator.audioSession so the device reports MODERN.
+    await page.addInitScript(() => {
+      let t = 'auto';
+      Object.defineProperty(navigator, 'audioSession', {
+        configurable: true,
+        get: () => ({ get type() { return t; }, set type(v) { t = v; } }),
+      });
+    });
+  }
+  await page.goto('/player/');
+  await page.fill('#name', name);
+  await page.click('#armBtn');
+  await expect(page.locator('#stateLine')).toContainText(/armed & connected|Playing/i, { timeout: 10000 });
+  return page.evaluate(() => localStorage.getItem('mp.deviceId'));
+}
+
+// A throwaway controller over ws (Node side) to inject commands the UI can't (e.g. a short timer).
+function nodeCommand(deviceId, fields) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
+    ws.on('open', () => {
+      ws.send(JSON.stringify(makeHello({ role: ROLES.CONTROLLER, deviceId: 'pw-ctrl', friendlyName: 'pw', caps: {} })));
+      ws.send(JSON.stringify(makeCommand({ target: deviceId, ...fields })));
+      setTimeout(() => { ws.close(); resolve(); }, 300);
+    });
+    ws.on('error', reject);
+  });
+}
+
+test('happy path: arm, start, stop, pre-flight (MID)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  const controller = await ctx.newPage();
+  await armPlayer(player, 'Nursery');
+
+  await controller.goto('/controller/');
+  await expect(controller.locator('#hubStatus')).toContainText('hub connected', { timeout: 10000 });
+  const card = controller.locator('.card', { hasText: 'Nursery' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+
+  await card.getByRole('button', { name: /Start|Playing/ }).click();
+  await expect(card.locator('.statechip')).toContainText('playing', { timeout: 10000 });
+  await expect(player.locator('#stateLine')).toContainText('Playing', { timeout: 10000 });
+
+  await card.getByRole('button', { name: '■ Stop' }).click();
+  await expect(card.locator('.statechip')).toContainText('silent', { timeout: 10000 });
+  await expect(player.locator('#stateLine')).toContainText(/Silent/i, { timeout: 10000 });
+
+  await controller.getByRole('button', { name: /Check all rooms/ }).click();
+  await expect(controller.locator('#preflightResult')).toContainText(/responding/i, { timeout: 10000 });
+  await ctx.close();
+});
+
+test('MODERN tier: volume slider drives SET_GAIN with no error', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'NurseryM', { modern: true });
+  await expect(player.locator('#tierBadge')).toHaveText('MODERN');
+
+  const controller = await ctx.newPage();
+  await controller.goto('/controller/');
+  const card = controller.locator('.card', { hasText: 'NurseryM' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  await expect(card.locator('.lockline')).toContainText(/work while locked/i); // MODERN lock summary
+  await card.getByRole('button', { name: /Start|Playing/ }).click();
+  await expect(card.locator('.statechip')).toContainText('playing', { timeout: 10000 });
+
+  const slider = card.locator('input[type=range]');
+  await expect(slider).toBeVisible();
+  await slider.evaluate((el) => {
+    el.value = '0.5';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect(card).toContainText('50%');
+  await expect(card.locator('.statechip')).toContainText('playing'); // still playing, SET_GAIN didn't break it
+  await ctx.close();
+});
+
+test('MID tier: per-device lock line + foreground volume slider', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'NurseryMid'); // headless Chromium detects as MID (no navigator.audioSession)
+  await expect(player.locator('#tierBadge')).toHaveText('MID');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const card = c.locator('.card', { hasText: 'NurseryMid' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  await expect(card.locator('.lockline')).toContainText(/Keeps playing while locked/i);
+  const slider = card.locator('input[type=range]');
+  await expect(slider).toBeVisible(); // MID now has the foreground-volume fallback
+  await expect(card.locator('.vol')).toContainText(/screen is on/i); // honest note
+  await slider.evaluate((el) => { el.value = '0.5'; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await expect(card).toContainText('50%');
+  await ctx.close();
+});
+
+test('sleep timer: hub-owned deadline stops the player on-device', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  const deviceId = await armPlayer(player, 'NurseryT');
+
+  const controller = await ctx.newPage();
+  await controller.goto('/controller/');
+  const card = controller.locator('.card', { hasText: 'NurseryT' });
+  await card.getByRole('button', { name: /Start|Playing/ }).click();
+  await expect(player.locator('#stateLine')).toContainText('Playing', { timeout: 10000 });
+
+  await nodeCommand(deviceId, { verb: VERBS.SET_TIMER, durationMs: 1500 });
+  await expect(player.locator('#stateLine')).toContainText(/Silent/i, { timeout: 8000 });
+  await expect(card.locator('.statechip')).toContainText('silent', { timeout: 8000 });
+  await ctx.close();
+});
+
+test('offline device raises the alarm on the parent phone', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'NurseryO');
+
+  const controller = await ctx.newPage();
+  await controller.goto('/controller/');
+  await expect(controller.locator('.card', { hasText: 'NurseryO' })).toBeVisible({ timeout: 10000 });
+
+  await player.close(); // device goes offline -> reconcileAlarms fires the alarm
+  await expect(controller.locator('#alarmBanner')).toBeVisible({ timeout: 10000 });
+  await expect(controller.locator('#alarmText')).toContainText('NurseryO');
+  await controller.click('#alarmDismiss');
+  await expect(controller.locator('#alarmBanner')).toBeHidden();
+  await ctx.close();
+});
+
+test('soundscape switch changes what the player reports', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'NurseryS');
+
+  const controller = await ctx.newPage();
+  await controller.goto('/controller/');
+  const card = controller.locator('.card', { hasText: 'NurseryS' });
+  await card.getByRole('button', { name: /Start|Playing/ }).click();
+  await expect(player.locator('#stateLine')).toContainText('Playing', { timeout: 10000 });
+
+  await card.getByRole('button', { name: /Pink/ }).click();
+  await expect(player.locator('#soundLine')).toContainText(/pink/i, { timeout: 8000 });
+  await ctx.close();
+});
+
+test('upload audio: it appears as a sound and plays on the device', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  const deviceId = await armPlayer(player, 'NurseryU');
+
+  // Upload a real (decodable) WAV via the file input; it should become a sound chip.
+  const controller = await ctx.newPage();
+  await controller.goto('/controller/');
+  const card = controller.locator('.card', { hasText: 'NurseryU' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  const wav = readFileSync('web/player/assets/white.wav');
+  await controller.locator('#fileInput').setInputFiles({ name: 'Nap.wav', mimeType: 'audio/wav', buffer: wav });
+  await expect(controller.locator('#uploadStatus')).toContainText(/Added/i, { timeout: 15000 });
+  await expect(card.getByRole('button', { name: 'Nap', exact: true })).toBeVisible({ timeout: 10000 });
+
+  // Foreground the player, then start + switch to the uploaded track (no background-deferral race).
+  await player.bringToFront();
+  const upId = await player.evaluate(async () => (await (await fetch('/api/library')).json()).soundscapes.find((s) => s.kind === 'upload')?.id);
+  await nodeCommand(deviceId, { verb: VERBS.START });
+  await nodeCommand(deviceId, { verb: VERBS.SET_SOUNDSCAPE, soundscape: upId });
+  await expect(player.locator('#soundLine')).toContainText(/Nap/i, { timeout: 10000 }); // reports the label
+  await ctx.close();
+});
+
+test('manage uploads: rename then delete', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'NurseryR');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const wav = readFileSync('web/player/assets/white.wav');
+  await c.locator('#fileInput').setInputFiles({ name: 'ManageMe.wav', mimeType: 'audio/wav', buffer: wav });
+  await expect(c.locator('#uploadStatus')).toContainText(/Added/i, { timeout: 15000 });
+
+  const list = c.locator('#uploadList');
+  const row = list.locator('.uprow', { hasText: 'ManageMe' });
+  await expect(row).toBeVisible({ timeout: 10000 });
+
+  // rename → BedtimeSong (unique)
+  await row.getByRole('button', { name: 'Rename' }).click();
+  await list.locator('input.upedit').fill('BedtimeSong');
+  await list.getByRole('button', { name: 'Save' }).click();
+  await expect(list.getByText('BedtimeSong', { exact: true })).toBeVisible({ timeout: 10000 });
+  const card = c.locator('.card', { hasText: 'NurseryR' });
+  await expect(card.getByRole('button', { name: 'BedtimeSong', exact: true })).toBeVisible({ timeout: 10000 });
+
+  // delete (two-tap confirm)
+  const brow = list.locator('.uprow', { hasText: 'BedtimeSong' });
+  await brow.getByRole('button', { name: 'Delete' }).click();
+  await brow.getByRole('button', { name: 'Confirm?' }).click();
+  await expect(list.getByText('BedtimeSong', { exact: true })).toHaveCount(0, { timeout: 10000 });
+  await expect(card.getByRole('button', { name: 'BedtimeSong', exact: true })).toHaveCount(0, { timeout: 10000 });
+  await ctx.close();
+});
+
+test('drag-to-reorder sounds updates the chip order on device cards', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'NurseryOrd');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const card = c.locator('.card', { hasText: 'NurseryOrd' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  const chips = card.locator('.sound .chips .chip');
+  await expect(chips.first()).toHaveText('White noise'); // default order
+
+  const list = c.locator('#uploadList');
+  const brownHandle = list.locator('.uprow', { hasText: 'Brown noise' }).locator('.handle');
+  const firstRow = list.locator('.uprow').first();
+  const bh = await brownHandle.boundingBox();
+  const fb = await firstRow.boundingBox();
+  await c.mouse.move(bh.x + bh.width / 2, bh.y + bh.height / 2);
+  await c.mouse.down();
+  await c.mouse.move(fb.x + fb.width / 2, fb.y - 4, { steps: 10 });
+  await c.mouse.up();
+
+  // full baked order propagated (not just the first row), catching a scrambled tail
+  const names = list.locator('.uprow .upname');
+  await expect(names.nth(0)).toHaveText('Brown noise', { timeout: 10000 });
+  await expect(names.nth(1)).toHaveText('White noise');
+  await expect(names.nth(2)).toHaveText('Pink noise');
+  await expect(chips.nth(0)).toHaveText('Brown noise', { timeout: 10000 });
+  await expect(chips.nth(1)).toHaveText('White noise');
+  await expect(chips.nth(2)).toHaveText('Pink noise');
+  await ctx.close();
+});
+
+test('inline ＋ chip opens the picker and adds a sound to the card', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'NurseryPlus');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const card = c.locator('.card', { hasText: 'NurseryPlus' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  const wav = readFileSync('web/player/assets/white.wav');
+  const [chooser] = await Promise.all([
+    c.waitForEvent('filechooser'),
+    card.getByRole('button', { name: 'Add a sound' }).click(),
+  ]);
+  await chooser.setFiles({ name: 'Chime.wav', mimeType: 'audio/wav', buffer: wav });
+  await expect(card.getByRole('button', { name: 'Chime', exact: true })).toBeVisible({ timeout: 15000 });
+  await ctx.close();
+});
+
+test('multi-device: two rooms appear; closing one alarms only it by name', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const p1 = await ctx.newPage();
+  const p2 = await ctx.newPage();
+  await armPlayer(p1, 'RoomOne');
+  await armPlayer(p2, 'RoomTwo');
+
+  const controller = await ctx.newPage();
+  await controller.goto('/controller/');
+  await expect(controller.locator('.card', { hasText: 'RoomOne' })).toBeVisible({ timeout: 10000 });
+  await expect(controller.locator('.card', { hasText: 'RoomTwo' })).toBeVisible({ timeout: 10000 });
+
+  await p2.close();
+  await expect(controller.locator('#alarmText')).toContainText('RoomTwo', { timeout: 10000 });
+  await ctx.close();
+});
+
+test('forget: an offline (ghost) device can be removed from the controller (finding #3)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'GhostRoom');
+
+  const controller = await ctx.newPage();
+  await controller.goto('/controller/');
+  const card = controller.locator('.card', { hasText: 'GhostRoom' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  const forget = card.locator('.forget');
+  // Forget is offered only once the device is offline.
+  await expect(forget).toBeHidden();
+
+  await player.close(); // device goes offline → becomes a ghost
+  await expect(forget).toBeVisible({ timeout: 10000 });
+  await forget.click();                       // two-tap confirm
+  await expect(forget).toHaveText(/Confirm/i);
+  await forget.click();                       // confirm → hub drops the registration
+  await expect(card).toHaveCount(0, { timeout: 10000 }); // card disappears
+  await ctx.close();
+});

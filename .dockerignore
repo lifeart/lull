@@ -1,0 +1,8 @@
+node_modules
+data
+.git
+test
+deploy/caddy_data
+deploy/caddy_config
+web/player/assets/*.wav
+web/player/assets/manifest.json

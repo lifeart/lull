@@ -1,0 +1,52 @@
+# Hub + Caddy (TLS). Caddy gets an iOS-trusted cert via Let's Encrypt DNS-01 so NO certificate
+# profile is installed on any device (works down to iOS 12). Pair with split-horizon DNS
+# (deploy/dnsmasq.conf or a router override) so ${MP_DOMAIN} resolves to this box on the LAN.
+#
+#   cp deploy/.env.example deploy/.env   # fill MP_DOMAIN + your DNS provider token
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
+#
+# The default Caddy image has no DNS plugin. For DNS-01 you need a Caddy build with your
+# provider module (e.g. ghcr.io/.../caddy-cloudflare). See deploy/Caddyfile.
+
+services:
+  hub:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    environment:
+      - PORT=8080
+      - STATE_FILE=/data/state.json
+      - UPLOADS_DIR=/data/uploads # user-uploaded audio persists on the volume
+      - MP_DOMAIN=${MP_DOMAIN} # also used for the WebSocket Origin allowlist
+      # Shared secret gating the control channel. REQUIRED on a real interface: the hub refuses to
+      # start with an empty token unless MP_ALLOW_OPEN=1. Generate with `openssl rand -hex 24`.
+      - MP_TOKEN=${MP_TOKEN}
+      - MP_ALLOW_OPEN=${MP_ALLOW_OPEN:-} # set to 1 to intentionally run OPEN on a trusted LAN
+    volumes:
+      - hub_data:/data
+    restart: unless-stopped
+
+  caddy:
+    # Stock caddy:2 pairs with the `tls internal` default in deploy/Caddyfile (HTTPS on first boot).
+    # For zero-device-install public certs (DNS-01), swap to a DNS-plugin image, e.g.
+    #   image: ghcr.io/caddy-dns/caddy-cloudflare:latest
+    image: caddy:2
+    # service_started (not service_healthy) so a hub outage/misconfig can't also take down TLS
+    # termination — Caddy stays up and cleanly 502s until the hub recovers. (review finding #4)
+    depends_on:
+      hub:
+        condition: service_started
+    ports:
+      - "443:443"
+      - "80:80"
+    environment:
+      - MP_DOMAIN=${MP_DOMAIN}
+      - MP_DNS_TOKEN=${MP_DNS_TOKEN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy_data:/data
+      - ./caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  hub_data:
