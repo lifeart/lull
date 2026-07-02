@@ -1,0 +1,28 @@
+name: CI
+
+# Runs the full test suite (node + real-browser Playwright) on every push and PR.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Bake loops + icons
+        run: npm run bake
+      - name: Node tests
+        run: npm test
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Browser e2e tests
+        run: npm run test:e2e
