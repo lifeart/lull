@@ -47,3 +47,12 @@ volume persistence and root-owned-volume upgrade). Real-iOS overnight soak is th
   regressions in the fixes themselves (rate-limit cap below the pre-flight fan-out; start-intent ACK
   keyed on the wrong verb; an alarm/prime race; the non-root switch vs a pre-existing root-owned
   volume).
+
+### Demo
+- **GitHub Pages demo** — the unmodified Player + Controller PWAs run server-lessly against an
+  in-browser mock hub (`demo/mock-hub.js`): `window.WebSocket`/`fetch` are patched and a single
+  hub is elected across tabs/iframes via the Web Locks API, relaying over `BroadcastChannel` and
+  running the real `shared/protocol.js` reducers. `pipeline/build-demo.js` assembles `_site/`
+  (relative paths, injected mock, SW disabled) and `.github/workflows/pages.yml` deploys it.
+  Verified end-to-end (arm → start/stop → pre-flight → offline alarm, both as two tabs and as the
+  iframe landing).

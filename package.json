@@ -8,6 +8,7 @@
     "bake": "node pipeline/bake.js",
     "start": "node hub/server.js",
     "dev": "node hub/server.js",
+    "build:demo": "node pipeline/build-demo.js",
     "test": "node --test test/*.test.js",
     "test:e2e": "playwright test"
   },

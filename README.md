@@ -4,6 +4,14 @@ Turn old iPhones/iPads on your home network into **remotely-controlled speakers*
 
 > **New here?** Start with [`docs/HANDOFF.md`](docs/HANDOFF.md) — status, how to run/test/deploy, architecture map, invariants, honest limits, and next steps.
 
+> **🔧 Live demo (no install):** the Player and Controller PWAs run on GitHub Pages against an
+> **in-browser mock hub** — a leader-elected `BroadcastChannel` hub running the project's real
+> shared protocol, so the two apps genuinely talk to each other with no server. Arm the Speaker,
+> then drive it from the Controller. Build it locally with `npm run build:demo` (output in `_site/`,
+> serve over any static server); it deploys automatically via [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
+> The demo shows the control plane, tiers, timer, and parent-phone alarm; it can't reproduce true
+> iOS background/lock behavior (that needs a real device — see the limits below).
+
 > Status: **MVP complete and production-hardened** (hub + Player PWA + Controller PWA, "always-audible" model with capability-gated remote volume on modern devices), through five adversarial review rounds; **83 node + 12 real-browser tests green**, container deploy path verified end-to-end. The one remaining unknown is the real-iOS-hardware overnight soak. See [`docs/DESIGN.md`](docs/DESIGN.md) for the full architecture, the iOS constraints that shape it, and the build plan (milestones M1–M8), and [`docs/HANDOFF.md`](docs/HANDOFF.md) for current status + what round 5 changed.
 
 ## The one thing to understand first

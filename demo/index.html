@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <title>mesh-playback — live demo</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#f2f2f7; --fg:#1c1c1e; --muted:#6d6d72; --card:#fff; --line:rgba(60,60,67,.18); --accent:#0a84ff; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#000; --fg:#f2f2f7; --muted:#9a9aa2; --card:#1c1c1e; --line:rgba(235,235,245,.18); } }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif; }
+    header { max-width:1100px; margin:0 auto; padding:28px 20px 8px; }
+    h1 { margin:0 0 4px; font-size:1.7rem; letter-spacing:-.02em; }
+    .sub { color:var(--muted); margin:0 0 14px; }
+    .note { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin:0 0 8px; }
+    .note b { color:var(--fg); }
+    .muted { color:var(--muted); }
+    a { color:var(--accent); }
+    main { max-width:1100px; margin:0 auto; padding:12px 20px 40px; }
+    .stage { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; }
+    @media (max-width:840px) { .stage { grid-template-columns:1fr; } }
+    .pane { background:var(--card); border:1px solid var(--line); border-radius:18px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+    .pane h2 { margin:0; padding:12px 16px; font-size:.95rem; display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--line); }
+    .pane h2 .tag { font-weight:600; color:var(--muted); font-size:.8rem; }
+    .pane .bar { padding:8px 12px; border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:center; }
+    .pane iframe { width:100%; height:640px; border:0; display:block; background:var(--bg); }
+    button.mini { -webkit-appearance:none; appearance:none; border:1px solid var(--line); background:transparent; color:var(--accent); font:inherit; font-size:.85rem; font-weight:600; padding:8px 12px; border-radius:10px; cursor:pointer; min-height:40px; }
+    footer { max-width:1100px; margin:0 auto; padding:0 20px 48px; color:var(--muted); font-size:.85rem; }
+    code { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:1px 5px; font-size:.85em; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>mesh-playback — live demo</h1>
+    <p class="sub">Turn old iPhones/iPads into remotely-controlled white-noise speakers — running here entirely in your browser.</p>
+    <div class="note">
+      <b>This is a real demo with no server.</b> GitHub Pages is static-only, so the hub is <b>simulated in your browser</b>
+      (a leader-elected <code>BroadcastChannel</code> hub running the project's actual shared protocol). The
+      <b>Speaker</b> and <b>Controller</b> below are the unmodified PWAs, genuinely talking to each other.
+      <span class="muted">Arm the Speaker, then drive it from the Controller: start/stop, volume, a sleep timer, switch sounds, run the bedtime pre-flight.</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="stage">
+      <section class="pane">
+        <h2>🔊 Speaker <span class="tag">— the old iPad (arm it once)</span></h2>
+        <div class="bar">
+          <button class="mini" id="reload">⟳ Reload speaker (simulate iOS reclaim)</button>
+          <span class="muted" style="font-size:.8rem">→ watch the Controller alarm</span>
+        </div>
+        <iframe id="player" src="player/" title="Speaker PWA" allow="autoplay"></iframe>
+      </section>
+      <section class="pane">
+        <h2>🎛 Controller <span class="tag">— the parent's phone</span></h2>
+        <div class="bar"><span class="muted" style="font-size:.8rem">Controls every armed room; alarms you when one fails.</span></div>
+        <iframe id="controller" src="controller/" title="Controller PWA" allow="autoplay"></iframe>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <p>You can also open <a href="player/">the Speaker</a> and <a href="controller/">the Controller</a> in separate tabs — they sync through the same in-browser hub.
+    Cross-<em>device</em> control needs the real hub (a tiny Node process); see the
+    <a href="https://github.com/lifeart/mesh-playback">repository</a> and <code>docs/DESIGN.md</code> for the iOS constraints and how to self-host.</p>
+    <p class="muted">The demo can't reproduce true iOS background/lock behavior (that needs a real device overnight) — it demonstrates the control plane, tiers, timer, and the parent-phone safety alarm.</p>
+  </footer>
+
+  <script>
+    // "Reload speaker" reloads the Speaker iframe → its in-browser socket drops → the hub marks it
+    // offline → the Controller raises the parent alarm, exactly like a reclaimed nursery tab.
+    document.getElementById('reload').addEventListener('click', () => {
+      const f = document.getElementById('player');
+      f.src = 'about:blank';
+      setTimeout(() => { f.src = 'player/'; }, 400);
+    });
+  </script>
+</body>
+</html>
