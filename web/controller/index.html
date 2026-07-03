@@ -24,9 +24,19 @@
   <header class="topbar">
     <div class="appbar">
       <h1>Rooms</h1>
-      <span id="hubStatus" class="hub">…</span>
+      <span class="appbar-right">
+        <button id="tokenBtn" class="iconbtn" aria-label="Access token" title="Access token">🔑</button>
+        <span id="hubStatus" class="hub">…</span>
+      </span>
     </div>
     <p id="healthLine" class="healthline" aria-live="polite"></p>
+    <div id="tokenPanel" class="tokenpanel" hidden>
+      <label class="faint" for="tokenInput">Access token — needed only if the hub sets one. Paste it once; it's remembered on this device.</label>
+      <div class="tokenrow">
+        <input id="tokenInput" class="input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="paste token" />
+        <button id="tokenSave" class="btn btn-primary">Save</button>
+      </div>
+    </div>
   </header>
 
   <main class="wrap">

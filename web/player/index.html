@@ -25,6 +25,10 @@
         <input class="input" id="name" placeholder="Nursery" autocomplete="off" enterkeyhint="done" />
         <button id="armBtn" class="btn btn-primary big block" style="margin-top:22px">🔊 Arm this device</button>
         <p class="muted" id="armError" role="alert" aria-live="assertive" style="color:var(--danger);min-height:1.2em"></p>
+        <details class="tokendetails">
+          <summary class="faint">Access token — only if the hub requires one</summary>
+          <input id="tokenInput" class="input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="paste token" style="margin-top:8px" />
+        </details>
       </div>
       <div class="card" id="hardenCard">
         <div class="row"><h2>Before you leave it</h2><span class="spacer"></span><span id="hardenCount" class="badge"></span></div>

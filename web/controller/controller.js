@@ -59,6 +59,28 @@ function scheduleReconnect() {
   reconnectDelay = Math.min(RECONNECT_MAX_MS, reconnectDelay * 1.7);
   setTimeout(() => { if (!ws) connect(); }, reconnectDelay);
 }
+// Force an immediate reconnect (after a token change). Detach the old socket's handlers first so its
+// late onclose can't null out the new connection.
+function reconnectNow() {
+  if (ws) { const old = ws; ws = null; old.onclose = old.onerror = old.onmessage = null; try { old.close(); } catch { /* closing */ } }
+  reconnectDelay = RECONNECT_BASE_MS;
+  connect();
+}
+// In-UI access token — the alternative to the `#t=` URL. Paste it, Save → persist + reconnect.
+function setupTokenUI() {
+  const inp = $('tokenInput'), panel = $('tokenPanel'), btn = $('tokenBtn'), save = $('tokenSave');
+  if (!inp || !btn || !panel || !save) return;
+  try { inp.value = localStorage.getItem('mp.token') || ''; } catch { /* storage blocked */ }
+  btn.addEventListener('click', () => { panel.hidden = !panel.hidden; if (!panel.hidden) inp.focus(); });
+  const commit = () => {
+    const v = inp.value.trim();
+    try { v ? localStorage.setItem('mp.token', v) : localStorage.removeItem('mp.token'); } catch (e) { console.warn('token save blocked', e); }
+    panel.hidden = true;
+    reconnectNow();
+  };
+  save.addEventListener('click', commit);
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+}
 function send(obj) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); }
 
 // --- remembered per-room sleep timer (P1) ---------------------------------------------------------
@@ -862,5 +884,6 @@ document.addEventListener('click', primeAlarm, { once: true });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch((e) => console.warn('sw reg failed', e));
 window.addEventListener('online', () => { if (!ws) connect(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { if (!ws) connect(); else runHealthCheck(); } });
+setupTokenUI();
 await loadSoundscapes();
 connect();

@@ -322,6 +322,14 @@ function buildHardening() {
   $('name').value = friendlyName;
   buildHardening();
   $('armBtn').addEventListener('click', armFromGesture);
+  const tokenInput = $('tokenInput'); // in-UI access token (alternative to the #t= link); read by authToken() on connect
+  if (tokenInput) {
+    try { tokenInput.value = localStorage.getItem('mp.token') || ''; } catch { /* storage blocked */ }
+    tokenInput.addEventListener('input', () => {
+      const v = tokenInput.value.trim();
+      try { v ? localStorage.setItem('mp.token', v) : localStorage.removeItem('mp.token'); } catch (e) { console.warn('token save blocked', e); }
+    });
+  }
   $('monitorToggle').addEventListener('click', toggleMonitor);
   $('overlay').addEventListener('click', resumeFromGesture);
   $('overlay').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') resumeFromGesture(); });
