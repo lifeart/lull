@@ -57,6 +57,16 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 10px 30px rgba(0, 0, 0, 0.06);
   --ring: 0 0 0 4px rgba(0, 122, 255, 0.28);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", sans-serif;
+
+  /* Nav-bar chrome + "Now Playing" hero (native-feel pass). --bar-bg is the translucent wash
+   * under the backdrop blur; browsers without blur fall back to solid --bg instead. */
+  --bar-bg: rgba(242, 242, 247, 0.82);
+  --hero-tint: rgba(0, 113, 227, 0.09);   /* accent wash at the top of the local-player hero */
+  --hero-tint-0: rgba(0, 113, 227, 0);    /* same hue at 0 alpha — old WebKit greys "transparent" */
+  --play-glow: rgba(29, 122, 48, 0.28);   /* soft elevation under the hero play button */
+
+  /* iOS spring-ish easing for presses/entrances (fast out, gentle settle) */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -88,15 +98,25 @@
 
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.5);
     --ring: 0 0 0 4px rgba(10, 132, 255, 0.4);
+
+    --bar-bg: rgba(18, 18, 20, 0.78);
+    --hero-tint: rgba(10, 132, 255, 0.16);
+    --hero-tint-0: rgba(10, 132, 255, 0);
+    --play-glow: rgba(48, 209, 88, 0.16);
   }
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
 
-/* Paint html too so iOS rubber-band overscroll shows the scheme background, not white/black. */
-html { background: var(--bg); }
+/* Paint html too so iOS rubber-band overscroll shows the scheme background, not white/black.
+ * overflow-x on the root clips any stray horizontal overflow at the viewport WITHOUT creating a
+ * new scroll container on <body> (which would break position: sticky). */
+html { background: var(--bg); overflow-x: hidden; }
 html, body { height: 100%; }
+/* Stop scroll chaining / accidental refresh gestures where supported; iOS keeps its native
+ * rubber-band (old iOS simply ignores the property — @supports keeps the block harmless). */
+@supports (overscroll-behavior-y: contain) { html { overscroll-behavior-y: contain; } }
 
 body {
   margin: 0;
@@ -104,6 +124,7 @@ body {
   font-size: 17px; line-height: 1.4; letter-spacing: -0.01em;
   color: var(--text); background: var(--bg);
   -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%;
+  -webkit-overflow-scrolling: touch; /* momentum/inertia on old-iOS scroll surfaces */
   padding:
     calc(env(safe-area-inset-top) + var(--s4))
     calc(env(safe-area-inset-right) + var(--s4))
@@ -125,8 +146,40 @@ h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; margin: 0;
 .appbar { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); max-width: var(--maxw); margin: var(--s1) auto var(--s4); }
 .appbar h1 { font-size: 1.5rem; }
 
-/* Cards — inset grouped: soft shadow (light) / hairline (dark) */
-.card { background: var(--surface); border-radius: var(--radius-lg); padding: var(--pad); box-shadow: var(--shadow); }
+/* Sticky iOS navigation bar (controller). Full-bleed via negative margins that cancel the body's
+ * safe-area padding, then re-pads itself so the title clears the notch/status bar. Translucent +
+ * blurred where supported (iOS nav-bar material); solid scheme background everywhere else. */
+.topbar {
+  position: -webkit-sticky; position: sticky;
+  top: 0; z-index: 10; /* below the alarm banner (z 20) — an alert outranks chrome */
+  margin:
+    calc(-1 * (env(safe-area-inset-top) + var(--s4)))
+    calc(-1 * (env(safe-area-inset-right) + var(--s4)))
+    var(--s3)
+    calc(-1 * (env(safe-area-inset-left) + var(--s4)));
+  padding:
+    calc(env(safe-area-inset-top) + var(--s3))
+    calc(env(safe-area-inset-right) + var(--s4))
+    var(--s3)
+    calc(env(safe-area-inset-left) + var(--s4));
+  background: var(--bg);
+  box-shadow: 0 0.5px 0 var(--border); /* hairline, like a scrolled UINavigationBar */
+}
+@supports ((-webkit-backdrop-filter: saturate(180%) blur(20px)) or (backdrop-filter: saturate(180%) blur(20px))) {
+  .topbar {
+    background: var(--bar-bg);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+  }
+}
+.topbar .appbar { margin: 0 auto; align-items: center; }
+.topbar .hub { white-space: nowrap; }
+
+/* Cards — inset grouped: soft shadow (light) / hairline (dark).
+ * Subtle entrance (fade + 6px rise) so cards settle in like iOS grouped lists; the global
+ * prefers-reduced-motion rule below disables it. */
+.card { background: var(--surface); border-radius: var(--radius-lg); padding: var(--pad); box-shadow: var(--shadow); animation: card-in 0.32s var(--ease-out) both; }
+@keyframes card-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @media (prefers-color-scheme: dark) { .card { box-shadow: none; border: 0.5px solid var(--border); } }
 .card + .card { margin-top: var(--s4); }
 /* Offline: recede the inert controls but keep the header row (name, “offline”, Forget) fully
@@ -151,9 +204,9 @@ h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; margin: 0;
   border: 0; border-radius: var(--radius);
   cursor: pointer; touch-action: manipulation;
   -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
-  transition: opacity 0.15s ease, background 0.15s ease;
+  transition: opacity 0.15s ease, background 0.15s ease, transform 0.18s var(--ease-out);
 }
-.btn:active { opacity: 0.5; }
+.btn:active { opacity: 0.5; transform: scale(0.97); } /* iOS press: dim + slight squeeze */
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn:focus-visible { outline: none; box-shadow: var(--ring); }
 .btn.block { width: 100%; }
@@ -176,10 +229,10 @@ h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; margin: 0;
   border: 0; border-radius: var(--radius-pill);
   cursor: pointer; touch-action: manipulation;
   -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.18s var(--ease-out);
 }
 .chip::after { content: ""; position: absolute; top: -4px; bottom: -4px; left: 0; right: 0; }
-.chip:active { opacity: 0.5; }
+.chip:active { opacity: 0.5; transform: scale(0.95); }
 .chip:focus-visible { outline: none; box-shadow: var(--ring); }
 .chip[aria-pressed="true"] { background: var(--accent-fill); color: #fff; font-weight: 600; }
 
@@ -205,10 +258,12 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 .input { width: 100%; min-height: var(--touch); padding: 0 var(--s4); font: inherit; font-size: 1.0625rem; color: var(--text); background: var(--surface); border: 0.5px solid var(--border-strong); border-radius: var(--radius); }
 .input:focus-visible { outline: none; box-shadow: var(--ring); border-color: var(--accent); }
 .input::placeholder { color: var(--faint); }
+/* On a card, fields sit as filled iOS form rows (system fill, no outline) instead of white-on-white. */
+.card .input { background: var(--fill-1); border-color: rgba(0, 0, 0, 0); }
 
 /* Banners — solid systemRed alert, no pulsing */
 .banner { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); border-radius: 14px; margin: 0 auto var(--s3); max-width: var(--maxw); }
-.banner.alarm { position: sticky; top: var(--s2); top: calc(env(safe-area-inset-top) + var(--s2)); z-index: 20; background: var(--danger-deep); color: #fff; box-shadow: var(--shadow); font-weight: 600; }
+.banner.alarm { position: -webkit-sticky; position: sticky; top: var(--s2); top: calc(env(safe-area-inset-top) + var(--s2)); z-index: 20; background: var(--danger-deep); color: #fff; box-shadow: var(--shadow); font-weight: 600; }
 .banner.alarm .btn { margin-left: auto; min-height: 44px; padding: 0 var(--s4); background: rgba(255, 255, 255, 0.22); color: #fff; }
 .hub { font-size: 0.9rem; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .hub.online { color: var(--play-text); } .hub.offline { color: var(--danger-text); } .hub.connecting { color: var(--warn); }
@@ -225,36 +280,58 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 .eq span:nth-child(6) { animation-delay: 0.12s; }
 .eq span:nth-child(7) { animation-delay: 0s; }
 
-/* Sound library rows (reorderable) + drop zone */
-.uprow { display: flex; align-items: center; gap: var(--s2); padding: 10px 0; border-top: 0.5px solid var(--border); }
+/* Sound library rows (reorderable) + drop zone.
+ * iOS table-cell rhythm on a 390px phone: the NAME gets the flexible space (no more "White …"
+ * truncation), the secondary controls shrink visually but keep a ≥44pt EFFECTIVE touch target
+ * via invisible ::after hit-area extensions (the same technique the chips use). */
+.uprow { display: flex; align-items: center; gap: var(--s1); padding: 8px 0; border-top: 0.5px solid var(--border); }
 .uprow:first-child { border-top: 0; }
-.upname { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upname { flex: 1 1 auto; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uprow .faint { white-space: nowrap; } /* "built-in" tag never wraps to two lines */
 .upedit { flex: 1; min-height: 44px; }
 .uprow.dragging { opacity: 0.7; background: var(--fill-1); border-radius: 10px; border-top-color: transparent; }
-.handle { cursor: grab; color: var(--faint); font-size: 1.15rem; line-height: 1; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; margin-left: -4px; touch-action: none; user-select: none; -webkit-user-select: none; }
+.handle { position: relative; cursor: grab; color: var(--faint); font-size: 1.15rem; line-height: 1; min-width: 36px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; margin-left: -6px; touch-action: none; user-select: none; -webkit-user-select: none; }
+.handle::after { content: ""; position: absolute; top: 0; bottom: 0; left: -4px; right: -4px; }
 .handle:active { cursor: grabbing; }
-/* Favorite star — 44px hit area; hollow (muted) off, systemYellow filled on. */
+/* Favorite star — 44pt effective hit area; hollow (muted) off, systemYellow filled on. */
 .fav { -webkit-appearance: none; appearance: none; background: transparent; border: 0; cursor: pointer;
-  min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+  position: relative; min-width: 38px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
   font-size: 1.2rem; line-height: 1; color: var(--faint); border-radius: 8px;
-  -webkit-user-select: none; user-select: none; }
+  -webkit-user-select: none; user-select: none;
+  transition: opacity 0.15s ease, transform 0.18s var(--ease-out); }
+.fav::after { content: ""; position: absolute; top: 0; bottom: 0; left: -3px; right: -3px; }
 .fav.on { color: #ffcc00; }
-.fav:active { opacity: 0.5; }
+.fav:active { opacity: 0.5; transform: scale(0.9); }
 .fav:focus-visible { outline: none; box-shadow: var(--ring); }
 .card.dropping { outline: 2px dashed var(--accent); outline-offset: -6px; }
-/* "This device" local player — subtly distinguished as the primary, self-contained speaker. */
-.card.local { box-shadow: inset 3px 0 0 var(--accent), var(--shadow); }
+/* "This device" — the Now Playing hero. Reads like Apple Music's player card: an accent wash
+ * settling into the surface, a headline title, and one prominent, softly-elevated play control. */
+.card.local {
+  background-color: var(--surface);
+  background-image: linear-gradient(180deg, var(--hero-tint), var(--hero-tint-0) 60%);
+  border-radius: 22px;
+  padding-top: var(--s5);
+}
 .card.local:empty { display: none; }
+#localPlayer > .row:first-child strong { font-size: 1.1875rem; letter-spacing: -0.02em; }
+#localPlayer .local-play {
+  min-height: 56px;
+  font-size: 1.125rem;
+  border-radius: 16px;
+  box-shadow: 0 8px 20px var(--play-glow);
+}
 .chip-add { color: var(--accent); font-weight: 700; }
-/* ≥44px hit areas so stressed one-handed / VoiceOver users can operate the secondary controls — finding #20 */
-.link-btn { -webkit-appearance: none; appearance: none; background: transparent; border: 0; padding: 6px 8px; min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--accent); cursor: pointer; border-radius: 8px; }
+/* ≥44pt EFFECTIVE hit areas (finding #20) — visual size relaxes so a 390px row breathes, the
+ * ::after extension keeps the touch target; VoiceOver / stressed one-handed use stays easy. */
+.link-btn { -webkit-appearance: none; appearance: none; background: transparent; border: 0; padding: 6px 6px; min-height: 44px; min-width: 36px; position: relative; display: inline-flex; align-items: center; justify-content: center; font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--accent); cursor: pointer; border-radius: 8px; transition: opacity 0.15s ease, transform 0.18s var(--ease-out); }
+.link-btn::after { content: ""; position: absolute; top: 0; bottom: 0; left: -4px; right: -4px; }
 .link-btn.danger { color: var(--danger-text); }
-.link-btn:active { opacity: 0.5; }
+.link-btn:active { opacity: 0.5; transform: scale(0.94); }
 .link-btn:focus-visible { outline: none; box-shadow: var(--ring); }
 
 /* Full-screen tap-to-resume — deliberately dim (a lit screen in a dark nursery is a bug),
  * but still ≥4.5:1 on black. */
-.overlay { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 50; display: none; align-items: center; justify-content: center; text-align: center; padding: 40px; background: #000; color: rgba(235, 235, 245, 0.5); cursor: pointer; }
+.overlay { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 50; display: none; align-items: center; justify-content: center; text-align: center; padding: 40px; background: #000; color: rgba(235, 235, 245, 0.5); cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
 .overlay.show { display: flex; }
 .overlay .big { font-size: 1.2rem; }
 .overlay:focus-visible { outline: 2px solid rgba(235, 235, 245, 0.4); outline-offset: -8px; }
@@ -262,10 +339,18 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 /* Empty state — centered guidance, placeholder outline instead of a bare paragraph */
 #empty { text-align: center; padding: var(--s6) var(--s4); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }
 
+/* Player (Speaker) screens — iOS-onboarding rhythm: large title outside, controls grouped on a
+ * card, the "armed" status reading like a lock-screen now-playing summary. */
+#setup { padding-top: var(--s4); }
+#setup .card { margin-top: var(--s2); }
+#setup #armError { margin: var(--s3) 0 0; }
+#status { padding-top: var(--s4); }
+#status .card { padding: var(--s5) var(--pad); }
+
 /* Landing tiles */
-a.tile { display: block; text-decoration: none; color: var(--text); }
+a.tile { display: block; text-decoration: none; color: var(--text); transition: opacity 0.15s ease, transform 0.18s var(--ease-out); }
 a.tile b { color: var(--accent); font-size: 1.1rem; }
-a.tile:active { opacity: 0.6; }
+a.tile:active { opacity: 0.6; transform: scale(0.98); }
 
 @keyframes eq { 0%, 100% { height: 28%; } 50% { height: 100%; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
