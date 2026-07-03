@@ -4,6 +4,7 @@
 // CC0 source so it keeps the synthesized track.
 //
 // Provenance (all no-attribution): licenses verified on the source pages by a human review pass.
+//   rain  — opengameart.org "AMB Rain Loop 2" (Kresiek The Furry)      — CC0-1.0
 //   ocean — archive.org "ocean-sea-sounds" / "Gentle Ocean"            — CC0-1.0
 //   fire  — opengameart.org "Fireplace Sound Loop" (PagDev)            — CC0-1.0
 //   wind  — Wikimedia Commons "Vento_fisterra.ogg" (Escoitar.org)      — Public Domain
@@ -27,6 +28,7 @@ const TMP = path.join(ROOT, '.tmp-ambient');
 const SR = 44100;
 
 const SOURCES = [
+  { id: 'rain', license: 'CC0-1.0', url: 'https://opengameart.org/sites/default/files/amb_rain2.ogg', start: 90, loopSec: 45, cfSec: 2.5 },
   { id: 'ocean', license: 'CC0-1.0', url: 'https://archive.org/download/ocean-sea-sounds/Gentle%20Ocean.mp3', start: 150, loopSec: 40, cfSec: 2.5 },
   { id: 'fire', license: 'CC0-1.0', url: 'https://opengameart.org/sites/default/files/fire.wav', start: 0, loopSec: 24, cfSec: 1.5 },
   { id: 'wind', license: 'PD', url: 'https://upload.wikimedia.org/wikipedia/commons/3/38/Vento_fisterra.ogg', start: 60, loopSec: 40, cfSec: 2.5 },
@@ -85,7 +87,7 @@ async function main() {
       console.warn(`[real] ${s.id}: FAILED (${e.message.split('\n')[0]}) — keeping the synthesized loop.`);
     }
   }
-  console.log('[real] done — real ocean/fire/wind overlaid; rain stays synthesized. (downloaded audio is gitignored)');
+  console.log('[real] done — real rain/ocean/fire/wind overlaid. (downloaded audio is gitignored)');
 }
 
 main().catch((e) => { console.error('[real] fatal:', e); process.exit(1); });
