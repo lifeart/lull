@@ -76,6 +76,7 @@ addEventListener('pagehide', () => { for (const ws of wsByConn.values()) ws.clos
 // ---- demo library store (baked sounds + user uploads persisted in localStorage) ----
 const LS_UPLOADS = 'mp-demo-uploads';
 const LS_ORDER = 'mp-demo-order';
+const LS_FAVS = 'mp-demo-favs';
 const LS_REGISTRY = 'mp-demo-registry';
 const MAX_DEMO_UPLOAD = 3 * 1024 * 1024; // localStorage is small; keep demo uploads modest
 
@@ -93,12 +94,14 @@ async function bakedSoundscapes() {
   return bakedCache;
 }
 async function libraryPayload() {
+  const favs = lsGet(LS_FAVS, []);
   const uploads = lsGet(LS_UPLOADS, []).map((u) => ({ id: u.id, label: u.label, url: u.dataUrl, kind: 'upload' }));
-  const all = [...(await bakedSoundscapes()), ...uploads];
+  const all = [...(await bakedSoundscapes()), ...uploads].map((s) => ({ ...s, fav: favs.includes(s.id) }));
   const order = lsGet(LS_ORDER, []);
   const rank = new Map(order.map((id, i) => [id, i]));
   all.sort((a, b) => (rank.has(a.id) ? rank.get(a.id) : Infinity) - (rank.has(b.id) ? rank.get(b.id) : Infinity));
-  return { soundscapes: all };
+  // Favorites pinned to the top (stable within each group), matching the real hub's libraryJson.
+  return { soundscapes: [...all.filter((s) => s.fav), ...all.filter((s) => !s.fav)] };
 }
 function libraryChanged() { bus.post({ to: 'hub', libraryChanged: true }); }
 
@@ -117,6 +120,12 @@ self.fetch = async (input, init) => {
   if (p.endsWith('/api/library') && (!init || (init.method || 'GET') === 'GET')) return jsonResponse(await libraryPayload());
   if (p.endsWith('/healthz') || p.endsWith('/api/health')) return jsonResponse({ ok: true, serverEpochMs: Date.now(), persistHealthy: true, total: 0, online: 0, offline: 0 });
   if (p.endsWith('/api/library/order')) { lsSet(LS_ORDER, (q.get('ids') || '').split(',').filter(Boolean)); libraryChanged(); return jsonResponse({ ok: true }); }
+  if (p.endsWith('/api/library/fav')) {
+    const id = q.get('id'); if (!id) return jsonResponse({ error: 'no id' }, 400);
+    const favs = lsGet(LS_FAVS, []);
+    lsSet(LS_FAVS, q.get('on') === '1' ? [...new Set([...favs, id])] : favs.filter((f) => f !== id));
+    libraryChanged(); return jsonResponse({ ok: true });
+  }
   if (p.endsWith('/api/upload/rename')) {
     const ups = lsGet(LS_UPLOADS, []); const it = ups.find((u) => u.id === q.get('id'));
     if (!it) return jsonResponse({ error: 'not found' }, 404);
@@ -125,7 +134,9 @@ self.fetch = async (input, init) => {
   }
   if (p.endsWith('/api/upload/delete')) {
     let ups = lsGet(LS_UPLOADS, []); if (!ups.some((u) => u.id === q.get('id'))) return jsonResponse({ error: 'not found' }, 404);
-    ups = ups.filter((u) => u.id !== q.get('id')); lsSet(LS_UPLOADS, ups); libraryChanged(); return jsonResponse({ ok: true });
+    ups = ups.filter((u) => u.id !== q.get('id')); lsSet(LS_UPLOADS, ups);
+    lsSet(LS_FAVS, lsGet(LS_FAVS, []).filter((f) => f !== q.get('id'))); // drop a deleted upload from favorites too
+    libraryChanged(); return jsonResponse({ ok: true });
   }
   if (p.endsWith('/api/device/forget')) {
     const reg = lsGet(LS_REGISTRY, {}); if (!reg[q.get('id')]) return jsonResponse({ error: 'not found' }, 404);

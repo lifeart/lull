@@ -314,10 +314,15 @@ test('favorite a sound: the star pins it to the top of the library and the card 
   await pinkStar().click(); // favorite Pink noise
   await expect(list.locator('.uprow .upname').nth(0)).toHaveText('Pink noise', { timeout: 10000 });
   await expect(card.locator('.sound .chips .chip').nth(0)).toHaveText('Pink noise', { timeout: 10000 });
+  // active state fully reflected: filled glyph + .on class + aria-pressed
   await expect(pinkStar()).toHaveText('★');
+  await expect(pinkStar()).toHaveClass(/\bon\b/);
+  await expect(pinkStar()).toHaveAttribute('aria-pressed', 'true');
 
-  await pinkStar().click(); // un-favorite → the pin is released
+  await pinkStar().click(); // un-favorite → the pin + active state are released
   await expect(pinkStar()).toHaveText('☆', { timeout: 10000 });
+  await expect(pinkStar()).not.toHaveClass(/\bon\b/);
+  await expect(pinkStar()).toHaveAttribute('aria-pressed', 'false');
   await ctx.close();
 });
 
