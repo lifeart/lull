@@ -61,18 +61,18 @@
           <button class="mini" id="reload">⟳ Reload speaker (simulate iOS reclaim)</button>
           <span class="muted" style="font-size:.8rem">→ watch the Controller alarm</span>
         </div>
-        <iframe id="player" src="player/" title="Speaker PWA" allow="autoplay"></iframe>
+        <iframe id="player" src="../player/" title="Speaker PWA" allow="autoplay"></iframe>
       </section>
       <section class="pane">
         <h2>🎛 Controller <span class="tag">— the parent's phone</span></h2>
         <div class="bar"><span class="muted" style="font-size:.8rem">Controls every armed room; alarms you when one fails.</span></div>
-        <iframe id="controller" src="controller/" title="Controller PWA" allow="autoplay"></iframe>
+        <iframe id="controller" src="../controller/" title="Controller PWA" allow="autoplay"></iframe>
       </section>
     </div>
   </main>
 
   <footer>
-    <p>You can also open <a href="player/">the Speaker</a> and <a href="controller/">the Controller</a> in separate tabs — they sync through the same in-browser hub.
+    <p><a href="../">← Back to the intro</a> · you can also open <a href="../player/">the Speaker</a> and <a href="../controller/">the Controller</a> in separate tabs — they sync through the same in-browser hub.
     Cross-<em>device</em> control needs the real hub (a tiny Node process); see the
     <a href="https://github.com/lifeart/mesh-playback">repository</a> and <code>docs/DESIGN.md</code> for the iOS constraints and how to self-host.</p>
     <p class="muted">The demo can't reproduce true iOS background/lock behavior (that needs a real device overnight) — it demonstrates the control plane, tiers, timer, and the parent-phone safety alarm.</p>
@@ -84,7 +84,7 @@
     document.getElementById('reload').addEventListener('click', () => {
       const f = document.getElementById('player');
       f.src = 'about:blank';
-      setTimeout(() => { f.src = 'player/'; }, 400);
+      setTimeout(() => { f.src = '../player/'; }, 400);
     });
   </script>
 </body>

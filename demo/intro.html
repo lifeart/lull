@@ -1,0 +1,116 @@
+<title>mesh-playback — nursery speakers from old iPhones</title>
+<style>
+:root{
+  --night:#0c1120; --panel2:#0f1527; --mist:#eef2fb; --muted:#93a0be; --line:rgba(147,160,190,.16);
+  --accent:#5aa2ff; --glow:#ffd39a; --play:#58d089;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box}
+html{background:var(--night)}
+body{margin:0;background:var(--night);color:var(--mist);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--accent)}
+.glow{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(1100px 620px at 50% -180px, rgba(255,211,154,.16), rgba(255,211,154,.04) 40%, transparent 66%),
+             radial-gradient(900px 500px at 84% 8%, rgba(90,162,255,.10), transparent 60%)}
+.wrap{position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:0 24px}
+.hero{padding:104px 0 26px;text-align:center}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--glow);opacity:.9}
+.mark{font-weight:800;font-size:15px;letter-spacing:-.01em;color:var(--muted);margin:20px 0 22px}
+h1{font-weight:800;letter-spacing:-.03em;font-size:clamp(2.1rem,6vw,3.6rem);line-height:1.04;margin:0 auto;max-width:14ch;text-wrap:balance}
+h1 .accent{color:var(--accent)}
+.lede{max-width:60ch;margin:22px auto 0;color:#cdd6ea;font-size:clamp(1rem,1.6vw,1.18rem)}
+.cta{display:inline-flex;gap:10px;margin-top:30px}
+.btn{display:inline-block;padding:14px 22px;border-radius:14px;font-weight:700;text-decoration:none;font-size:1rem}
+.btn.primary{background:var(--accent);color:#06122a}
+.btn.ghost{border:1px solid var(--line);color:var(--mist)}
+.specs{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:34px 0 6px;font:600 12.5px/1 var(--mono);font-variant-numeric:tabular-nums}
+.specs span{padding:9px 13px;border:1px solid var(--line);border-radius:999px;color:#c3cde3;background:rgba(20,27,48,.5)}
+.specs b{color:var(--mist)}
+section{padding:64px 0}
+.elabel{display:flex;align-items:center;gap:14px;font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.elabel::after{content:"";flex:1;height:1px;background:var(--line)}
+h2{font-weight:700;letter-spacing:-.02em;font-size:clamp(1.5rem,3vw,2rem);margin:0 0 30px;text-wrap:balance}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:40px 34px}
+@media(max-width:720px){.grid{grid-template-columns:1fr;gap:44px}}
+.shot{display:flex;flex-direction:column;align-items:center;gap:18px}
+.cap{max-width:34ch;text-align:center;color:#c6cfe3;font-size:.98rem}
+.cap b{color:var(--mist);font-weight:600}
+.device{width:min(300px,80vw);background:#05070e;border-radius:46px;padding:11px;
+  box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 30px 60px -24px rgba(0,0,0,.8),0 0 0 1px rgba(147,160,190,.10),0 0 60px -12px rgba(255,211,154,.12);position:relative}
+.device::before{content:"";position:absolute;top:11px;left:50%;transform:translateX(-50%);width:120px;height:24px;background:#05070e;border-radius:0 0 16px 16px;z-index:2}
+.device img{display:block;width:100%;border-radius:36px}
+/* live demo */
+.live{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:800px){.live{grid-template-columns:1fr}}
+.pane{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--panel2);box-shadow:0 30px 60px -30px rgba(0,0,0,.7)}
+.phead{padding:12px 16px;border-bottom:1px solid var(--line);font-weight:700;font-size:.95rem}
+.phead span{color:var(--muted);font-weight:500;font-size:.82rem}
+.pane iframe{width:100%;height:620px;border:0;display:block;background:#fff}
+.livenote{text-align:center;color:#c6cfe3;margin:20px auto 0;max-width:56ch;font-size:.97rem}
+footer{border-top:1px solid var(--line);margin-top:40px;padding:52px 0 90px}
+.foot-grid{display:grid;grid-template-columns:1fr 1fr;gap:34px}
+@media(max-width:720px){.foot-grid{grid-template-columns:1fr;gap:26px}}
+.foot-grid h3{font-size:.82rem;letter-spacing:.12em;text-transform:uppercase;color:var(--glow);margin:0 0 10px;font-family:var(--mono);font-weight:600}
+.foot-grid p{margin:0;color:#c0c9de;font-size:.96rem}
+code{font-family:var(--mono);font-size:.9em;background:rgba(90,162,255,.12);color:#bcd6ff;padding:2px 6px;border-radius:6px}
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.3,1)}
+.reveal.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
+</style>
+<div class="glow"></div>
+<div class="wrap">
+  <header class="hero">
+    <div class="eyebrow">Web tech · no native app · works down to iOS 12</div>
+    <div class="mark">mesh-playback</div>
+    <h1>Old iPhones and iPads, turned into nursery speakers you run from <span class="accent">your phone</span>.</h1>
+    <p class="lede">White noise, procedural ambient loops, a sleep timer, and a baby monitor — controlled from the parent's phone, with a loud alarm the moment a room stops sounding when it shouldn't.</p>
+    <div class="cta"><a class="btn primary" href="#try">Try it live ↓</a><a class="btn ghost" href="https://github.com/lifeart/mesh-playback">Source on GitHub</a></div>
+    <div class="specs"><span><b>108</b> tests green</span><span><b>10</b> built-in sounds</span><span><b>3</b> capability tiers</span><span><b>1</b> tiny hub · one dependency</span></div>
+  </header>
+
+  <section>
+    <div class="elabel">The remote — your phone</div>
+    <h2>One tap runs every room. Or the phone is the speaker itself.</h2>
+    <div class="grid">
+      <div class="shot reveal"><div class="device"><img alt="Controller now-playing hero, sound library and sleep timer" src="shots/controller-top-light.png"></div><p class="cap"><b>Play right here.</b> The app is its own speaker — pick a sound, set a timer, no second device needed.</p></div>
+      <div class="shot reveal"><div class="device"><img alt="A room card in dark mode with the loudness meter" src="shots/controller-room-dark.png"></div><p class="cap"><b>Every room, at a glance.</b> Start · stop · volume · timer · sound, plus a live &ldquo;room sound&rdquo; meter from the baby monitor.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="elabel">The speaker — the old device</div>
+    <h2>Arm it once. It keeps the sound alive all night.</h2>
+    <div class="grid">
+      <div class="shot reveal"><div class="device"><img alt="Speaker setup with a hardening checklist" src="shots/player-setup.png"></div><p class="cap"><b>Set up once.</b> A checklist (power, auto-lock, updates off&hellip;) turns silent 3am misconfiguration into a visible gap.</p></div>
+      <div class="shot reveal"><div class="device"><img alt="Speaker armed and connected, baby monitor on" src="shots/player-armed.png"></div><p class="cap"><b>Armed &amp; honest.</b> It says exactly what works while locked — and the baby monitor sends the room's sound level back to you.</p></div>
+    </div>
+  </section>
+
+  <section id="try">
+    <div class="elabel">Try it live — no install, no server</div>
+    <h2>Arm the Speaker, then drive it from the Controller.</h2>
+    <div class="live">
+      <div class="pane"><div class="phead">🔊 Speaker <span>— the old iPad · arm it once</span></div><iframe src="player/" title="Speaker PWA" allow="autoplay"></iframe></div>
+      <div class="pane"><div class="phead">🎛 Controller <span>— your phone</span></div><iframe src="controller/" title="Controller PWA" allow="autoplay"></iframe></div>
+    </div>
+    <p class="livenote">A leader-elected in-browser hub runs the real protocol over <code>BroadcastChannel</code>, so these unmodified apps genuinely talk to each other with nothing installed. <a href="live/">Open full-screen ↗</a></p>
+  </section>
+
+  <footer>
+    <div class="foot-grid">
+      <div>
+        <h3>The honest part</h3>
+        <p>No web app can wake a locked, idle old device from silence at 3am. So the design keeps the sound already playing, and moves failure-detection to your (awake) phone — a loud alarm the moment a room drops. The baby monitor works with the speaker's screen on.</p>
+      </div>
+      <div>
+        <h3>Run it for real</h3>
+        <p><code>npm install &amp;&amp; npm run bake &amp;&amp; npm start</code> — then deploy the tiny hub to a Raspberry Pi, a Synology NAS, or behind a Cloudflare Tunnel. HTTPS unlocks the modern-tier extras; plain HTTP on the LAN covers the always-audible core.</p>
+      </div>
+    </div>
+  </footer>
+</div>
+<script>
+  const io=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.14});
+  document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+</script>

@@ -31,8 +31,12 @@ cpSync(R('shared'), O('shared'), { recursive: true }); // /shared/*.js the app i
 mkdirSync(O('demo'), { recursive: true });
 cpSync(R('demo', 'mock-hub.js'), O('demo', 'mock-hub.js'));
 
-// 3) The demo landing (Player + Controller side-by-side) replaces the plain app landing.
-cpSync(R('demo', 'index.html'), O('index.html'));
+// 3) Landing = the showcase intro (screenshots + an embedded live demo); the full-screen
+//    Player+Controller demo lives at /live/. Screenshots are served from /shots/.
+cpSync(R('demo', 'shots'), O('shots'), { recursive: true });
+cpSync(R('demo', 'intro.html'), O('index.html'));
+mkdirSync(O('live'), { recursive: true });
+cpSync(R('demo', 'index.html'), O('live', 'index.html'));
 
 // 4) Patch the two app shells + their JS so they run under a subpath with the mock, no SW.
 const edit = (file, fn) => { writeFileSync(file, fn(readFileSync(file, 'utf8'))); };
