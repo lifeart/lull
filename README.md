@@ -68,6 +68,8 @@ network interface it refuses to start without `MP_TOKEN` (set `MP_ALLOW_OPEN=1` 
 trusted LAN; `localhost` is exempt for dev). Generate one with `openssl rand -hex 24` and open the
 apps once with `…/controller/#t=YOUR_TOKEN` (persists to the device). Uploads are streamed to disk
 with a size cap and concurrency limit; the container runs as a non-root user with a health check.
+For deployment topologies (LAN, Cloudflare Tunnel for remote/public access, and the "GitHub Pages +
+WebRTC vs. standalone hub" trade-offs) plus public-exposure auth, see [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 - On this machine: open `http://localhost:8080/controller/` and, in another tab, `http://localhost:8080/player/` → name it, tap **Arm**, then drive it from the controller. (`localhost` is a secure context, so it all works without certs on the dev box.)
 - On a **real iPhone/iPad** you need HTTPS (service worker / audioSession / wake lock require a secure context). Set up Caddy + DNS-01 + split-horizon DNS — see [`deploy/`](deploy/) and [`docs/DESIGN.md`](docs/DESIGN.md) §1.6. Then harden each device ([`docs/HARDENING.md`](docs/HARDENING.md)) and run the [overnight test](docs/OVERNIGHT-TEST.md) before trusting it.
