@@ -1,14 +1,13 @@
 {
   "$comment": [
-    "Curated ambient sound sources for `npm run fetch:ambient`. See docs/RESEARCH-AMBIENT-SOUNDS.md.",
-    "HUMAN LICENSE GATE: every entry ships with \"cleared\": false. fetch-ambient.js SKIPS uncleared",
-    "entries. Before flipping an entry to true you MUST: (1) open sourceUrl, confirm the license is CC0",
-    "or public-domain (or an accepted CC-BY, with attribution filled in), (2) download the file once and",
-    "put its real sha256 in `sha256` (fetch-ambient verifies it), (3) confirm the raw `url` is a direct,",
-    "redistribution-clean host (a CC0 GitHub repo pinned to a commit SHA, FreePD mirror, OpenGameArt CC0,",
-    "archive.org/Wikimedia CC0 direct file) — NEVER the Freesound API (its ToS forbids re-hosting).",
-    "NC / ND / BY-SA are refused by the ingest filter. The URLs/hashes below are PLACEHOLDERS to be",
-    "filled during curation; they intentionally do nothing until cleared."
+    "OPTIONAL real field-recording sources for `npm run fetch:ambient`. The built-in library already",
+    "ships SYNTHESIZED ambient loops (rain/ocean/wind/fire/fan/womb/heartbeat via pipeline/bake.js) with",
+    "no license concern — this download path is only if you want actual recordings.",
+    "PERSONAL, NON-COMMERCIAL USE: the gate is relaxed — CC0/PD/CC-BY/CC-BY-NC/CC-BY-SA are all fine for",
+    "your own home (only NoDerivatives is refused, since we loop/transcode). Still: (1) fill in a direct",
+    "`url` + real `sha256` and set \"cleared\": true (uncleared entries are skipped); (2) do NOT commit the",
+    "downloaded audio to a public repo — that's redistribution regardless of personal use; (3) needs ffmpeg.",
+    "The URLs/hashes below are PLACEHOLDERS."
   ],
   "items": [
     {

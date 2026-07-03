@@ -90,7 +90,9 @@ test('hub: /api/library merges baked + uploaded; upload + /uploads round-trips',
     // partial + stale order: known ids ranked first, bogus ignored, omitted kept in manifest order
     await fetch(`${base}/api/library/order?ids=bogus-xyz,${added.id},brown`, { method: 'POST' });
     const seq = (await (await fetch(base + '/api/library')).json()).soundscapes.map((s) => s.id);
-    assert.deepEqual(seq, [added.id, 'brown', 'white', 'pink']);
+    // ranked ids lead (bogus dropped); the rest follow in manifest order (white, pink, …ambient…).
+    assert.deepEqual(seq.slice(0, 4), [added.id, 'brown', 'white', 'pink']);
+    assert.ok(!seq.includes('bogus-xyz'));
 
     // rename
     const rn = await fetch(`${base}/api/upload/rename?id=${added.id}&name=Renamed`, { method: 'POST' });

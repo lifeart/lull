@@ -61,9 +61,101 @@ function brown(n) {
   return out;
 }
 
-// Make an equal-power seamless loop of `loopN` samples from a generator.
+// --- procedural ambient textures (zero-dep, license-free — our own synthesis) -------------------
+// All are filtered/modulated noise. Absolute levels don't matter: seamlessLoop peak-normalizes.
+// Periodic modulation uses (i % loopN) so whole cycles fit the loop → seamless across the wrap.
+
+function rain(n) { // bright, high-passed hiss
+  const out = new Float32Array(n);
+  let x1 = 0, y1 = 0, lp = 0;
+  for (let i = 0; i < n; i++) {
+    const w = Math.random() * 2 - 1;
+    const hp = 0.72 * (y1 + w - x1); x1 = w; y1 = hp; // one-pole high-pass
+    lp = lp * 0.4 + hp * 0.6;                          // shave the harshest top
+    let s = lp;
+    if (Math.random() < 0.0009) s += (Math.random() * 2 - 1) * 0.5; // sparse droplets
+    out[i] = s * 0.7;
+  }
+  return out;
+}
+function ocean(n, loopN) { // low swell (brown, low-passed, amplitude-modulated)
+  const out = new Float32Array(n);
+  let last = 0, lp = 0;
+  const cycles = 3;
+  for (let i = 0; i < n; i++) {
+    const w = Math.random() * 2 - 1;
+    last = (last + 0.02 * w) / 1.02;
+    lp = lp * 0.86 + last * 0.14;
+    const phase = ((i % loopN) / loopN) * cycles * 2 * Math.PI;
+    const swell = 0.3 + 0.7 * (0.5 - 0.5 * Math.cos(phase));
+    out[i] = lp * 3.5 * swell;
+  }
+  return out;
+}
+function wind(n, loopN) { // band-passed noise with a slow cutoff sweep
+  const out = new Float32Array(n);
+  let lp = 0, lp2 = 0;
+  for (let i = 0; i < n; i++) {
+    const w = Math.random() * 2 - 1;
+    const phase = ((i % loopN) / loopN) * 2 * Math.PI * 2;
+    const cut = 0.02 + 0.03 * (0.5 - 0.5 * Math.cos(phase));
+    lp = lp * (1 - cut) + w * cut;
+    lp2 = lp2 * (1 - cut) + lp * cut;
+    out[i] = lp2 * 6.5;
+  }
+  return out;
+}
+function fire(n) { // warm brown base + sparse crackle
+  const out = new Float32Array(n);
+  let last = 0, lp = 0;
+  for (let i = 0; i < n; i++) {
+    const w = Math.random() * 2 - 1;
+    last = (last + 0.02 * w) / 1.02;
+    lp = lp * 0.7 + last * 0.3;
+    let s = lp * 2.5;
+    if (Math.random() < 0.0007) s += (Math.random() * 2 - 1) * 0.9; // crackle pop
+    out[i] = s;
+  }
+  return out;
+}
+function fan(n) { // steady low-passed drone
+  const out = new Float32Array(n);
+  let last = 0, lp = 0;
+  for (let i = 0; i < n; i++) {
+    const w = Math.random() * 2 - 1;
+    last = (last + 0.02 * w) / 1.02;
+    lp = lp * 0.93 + last * 0.07;
+    out[i] = lp * 3.5;
+  }
+  return out;
+}
+function heartbeat(n, loopN) { // lub-dub at 60 BPM (1 beat/sec → aligns to whole seconds)
+  const out = new Float32Array(n);
+  const beat = SR; // 60 BPM = SR samples/beat; divides a whole-second loop → seamless
+  const env = (pos, k, wdt) => Math.exp(-((pos - k) * (pos - k)) / (2 * wdt * wdt));
+  for (let i = 0; i < n; i++) {
+    const pos = i % beat;
+    const lub = env(pos, 0.06 * SR, 0.02 * SR);
+    const dub = env(pos, 0.34 * SR, 0.025 * SR);
+    out[i] = Math.sin(2 * Math.PI * 58 * i / SR) * (lub * 0.95 + dub * 0.6);
+  }
+  return out;
+}
+function womb(n, loopN) { // muffled pink whoosh + subdued heartbeat (in-utero)
+  const out = new Float32Array(n);
+  const pk = pink(n), hb = heartbeat(n, loopN);
+  let l = 0;
+  for (let i = 0; i < n; i++) {
+    l = l * 0.9 + pk[i] * 0.1; // heavy low-pass = muffled
+    out[i] = l * 2.6 + hb[i] * 0.45;
+  }
+  return out;
+}
+
+// Make an equal-power seamless loop of `loopN` samples from a generator (gen receives loopN so
+// any periodic modulation can align to the loop for a seamless wrap).
 function seamlessLoop(gen, loopN, cfN) {
-  const raw = gen(loopN + cfN);
+  const raw = gen(loopN + cfN, loopN);
   const out = new Float32Array(loopN);
   for (let i = 0; i < loopN; i++) out[i] = raw[i];
   for (let i = 0; i < cfN; i++) {
@@ -112,6 +204,14 @@ async function main() {
     { id: 'white', label: 'White noise', gen: white },
     { id: 'pink', label: 'Pink noise', gen: pink },
     { id: 'brown', label: 'Brown noise', gen: brown },
+    // Procedural ambient textures (our own synthesis — no license, works fully offline).
+    { id: 'rain', label: 'Rain', gen: rain, kind: 'ambient' },
+    { id: 'ocean', label: 'Ocean waves', gen: ocean, kind: 'ambient' },
+    { id: 'wind', label: 'Wind', gen: wind, kind: 'ambient' },
+    { id: 'fire', label: 'Fireplace', gen: fire, kind: 'ambient' },
+    { id: 'fan', label: 'Fan', gen: fan, kind: 'ambient' },
+    { id: 'womb', label: 'Womb', gen: womb, kind: 'ambient' },
+    { id: 'heartbeat', label: 'Heartbeat', gen: heartbeat, kind: 'ambient' },
   ];
 
   const soundscapes = [];
@@ -120,7 +220,9 @@ async function main() {
     const wav = encodeWavPCM16(samples);
     const file = `${k.id}.wav`;
     await writeFile(path.join(OUT_DIR, file), wav);
-    soundscapes.push({ id: k.id, label: k.label, files: [file], durationSec: LOOP_SEC });
+    const entry = { id: k.id, label: k.label, files: [file], durationSec: LOOP_SEC };
+    if (k.kind) entry.kind = k.kind;
+    soundscapes.push(entry);
     console.log(`[bake] ${file}  (${(wav.length / 1024 / 1024).toFixed(1)} MB, ${LOOP_SEC}s loop)`);
   }
 

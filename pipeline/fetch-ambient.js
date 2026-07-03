@@ -30,7 +30,12 @@ const SR = 44100;
 
 const readJson = (p, d) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return d; } };
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
-const forbidden = (lic) => /(-nc|noncommercial|-nd|noderiv|-sa|sharealike)/i.test(String(lic || ''));
+// PERSONAL, non-commercial use: NonCommercial (NC) and ShareAlike (SA) are fine (you're not
+// distributing), so only NoDerivatives is refused — we loop/transcode, which ND forbids. This is an
+// OPTIONAL path for real field recordings; the built-in library already ships synthesized ambient
+// loops (rain/ocean/wind/fire/fan/womb/heartbeat) with no license concern at all. Do NOT commit
+// downloaded audio to a public repo — that would be redistribution regardless of personal use.
+const forbidden = (lic) => /(-nd|noderiv)/i.test(String(lic || ''));
 
 function haveFfmpeg() {
   try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }); return true; } catch { return false; }

@@ -1,5 +1,12 @@
 # mesh-playback — Ambient Sound Library: Research Report + Integration Plan
 
+> **Shipped (update):** the built-in library now includes **synthesized** ambient loops — rain, ocean,
+> wind, fireplace, fan, womb, heartbeat — generated procedurally in `pipeline/bake.js` (zero deps, no
+> license, fully offline). That satisfies "expand the library" with no download or legal step. The
+> **download** path below (`npm run fetch:ambient`) is now optional, for real field recordings; for
+> **personal/non-commercial use** its gate is relaxed (CC0/PD/BY/NC/SA all fine — only ND is refused —
+> just don't commit downloaded audio to a public repo). The research below stands for that path.
+
 > Output of a fan-out web-research pass with **adversarial per-source license verification**
 > (83 sources found, 82 verified, 59 usable). Legal claims are cited but **AI-generated — do a
 > final human license check on every file before shipping**, per §8. Prefer CC0/PD to keep the
