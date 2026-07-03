@@ -16,7 +16,7 @@ Full rationale + the verified iOS constraints are in [`DESIGN.md`](DESIGN.md). R
 ## 2. Status
 **MVP complete, tested, and hardened through five adversarial review rounds** (27 → 32 → 13 → 5 →
 a 21-finding production-readiness audit, all fixed), plus feature + native-UI rounds. **88 node
-tests + 24 real-browser Playwright tests, all green.** The container deploy path is verified
+tests + 25 real-browser Playwright tests, all green.** The container deploy path is verified
 end-to-end (builds, boots as a non-root user, serves both PWAs + Range/206, fail-closed auth,
 graceful-shutdown state flush, volume persistence across restart). Not yet run on real iOS hardware end-to-end — see the honest
 limits (§7) and the overnight-test gate.
@@ -61,7 +61,7 @@ npm run bake                      # generate seamless white/pink/brown loops + P
 npm start                         # hub on http://localhost:8080  (localhost is a secure context)
 npm test                          # 88 node tests
 npx playwright install chromium   # once
-npm run test:e2e                  # 24 real-browser tests
+npm run test:e2e                  # 25 real-browser tests
 npm run fetch:ambient             # (optional) download curated CC0/PD ambient loops — see below
 ```
 - **Dev:** open `http://localhost:8080/controller/` and `/player/` in two tabs.
