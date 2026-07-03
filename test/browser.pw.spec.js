@@ -521,6 +521,32 @@ test('local playback: the main app plays sound on THIS device with no speaker cl
   await ctx.close();
 });
 
+test('default-ON sleep timer: a plain Start applies ~45 min; an explicit "off" is honored', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'DefaultTimerRoom');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const card = c.locator('.card', { hasText: 'DefaultTimerRoom' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  const rem = card.locator('.rem');
+
+  // Never chose a timer → 45m is pre-selected and a plain Start applies a ~45:00 countdown.
+  await expect(card.getByRole('button', { name: '45m' })).toHaveAttribute('aria-pressed', 'true');
+  await card.getByRole('button', { name: /Start/ }).click();
+  await expect(rem).toHaveText(/4[45]:\d\d/, { timeout: 10000 });
+
+  // Explicitly turn the timer OFF → remembered as off, and a later plain Start has NO countdown.
+  await card.getByRole('button', { name: '■ Stop' }).click();
+  await expect(rem).toHaveText('—', { timeout: 10000 });
+  await card.getByRole('button', { name: 'off' }).click();
+  await expect(card.getByRole('button', { name: 'off' })).toHaveAttribute('aria-pressed', 'true');
+  await card.getByRole('button', { name: /Start/ }).click();
+  await expect(rem).toHaveText('—', { timeout: 10000 });
+  await ctx.close();
+});
+
 test('remembered per-room sleep timer: Start re-applies the last-chosen timer (P1)', async ({ browser }) => {
   const ctx = await browser.newContext();
   const player = await ctx.newPage();

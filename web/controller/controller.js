@@ -75,13 +75,17 @@ function nextWakeEpochMs(hour) {
   return d.getTime();
 }
 const MIN_TIMER = { '15m': 15, '30m': 30, '45m': 45, '60m': 60 };
+// Default-ON sleep timer (docs/RESEARCH-SOUND-SCIENCE.md §2b — limit level × duration): a room that
+// was never given a timer preference gets 45 min. An EXPLICIT "off" is remembered (as 'off') and
+// honored — that's why the chip stores its real key, not null, so unset ≠ off.
+const DEFAULT_TIMER_KEY = '45m';
 function timerFieldsForKey(key) {
   if (key && MIN_TIMER[key]) return { durationMs: MIN_TIMER[key] * 60000 };
   if (key === 'wake') return { durationMs: Math.max(0, nextWakeEpochMs(7) - Date.now()) };
   return null; // 'off' or unset → no sleep timer
 }
 function startDevice(deviceId) {
-  const f = timerFieldsForKey(rememberedTimerKey(deviceId));
+  const f = timerFieldsForKey(rememberedTimerKey(deviceId) || DEFAULT_TIMER_KEY); // default ON unless 'off'
   sendCommand(deviceId, f ? { verb: VERBS.START, ...f } : { verb: VERBS.START });
 }
 
@@ -343,7 +347,7 @@ function makeCard(deviceId, tier, caps) {
   const timers = el.querySelector('.timers');
   const addTimer = (key, label, fields) => {
     const b = chipBtn(label, () => {
-      setRememberedTimerKey(deviceId, key === 'off' ? null : key); // remember the choice (P1)
+      setRememberedTimerKey(deviceId, key); // remember the choice (P1) — incl. 'off', so unset ≠ off
       sendCommand(deviceId, { verb: VERBS.SET_TIMER, ...fields() });
       paintTimerChips();
     });
@@ -354,7 +358,7 @@ function makeCard(deviceId, tier, caps) {
   addTimer('wake', '☾ 7:00', () => ({ durationMs: Math.max(0, nextWakeEpochMs(7) - Date.now()) }));
   addTimer('off', 'off', () => ({ endsAtEpochMs: null }));
   function paintTimerChips() {
-    const k = rememberedTimerKey(deviceId);
+    const k = rememberedTimerKey(deviceId) || DEFAULT_TIMER_KEY; // reflect the default-ON 45m when unset
     for (const [key, b] of refs.timerChips) b.setAttribute('aria-pressed', String(key === k));
   }
   paintTimerChips();
@@ -682,7 +686,7 @@ function rebuildAllCards() {
 // track) directly — arm once with a tap (iOS gesture), then play/stop/volume/sound/timer locally.
 // State lives here (not in the DOM), so a library-driven rebuild never tears down playback.
 const localState = {
-  engine: null, armed: false, tier: null, controls: null, refs: {},
+  engine: null, armed: false, tier: null, controls: null, refs: {}, timerKey: DEFAULT_TIMER_KEY, // default-ON 45m
   desired: { verb: VERBS.STOP, gainLinear: GAIN_DEFAULT, soundscape: SOUNDSCAPE_DEFAULT, endsAtEpochMs: null },
 };
 const localUrlFor = (id) => { const s = soundscapes.find((x) => x.id === id); return (s && s.url) || '/player/assets/pink.wav'; };
@@ -702,7 +706,14 @@ async function localArm() {
     localState.armed = true; return true;
   } catch (e) { localState.engine = null; localState.armed = false; console.warn('local arm failed', e); return false; }
 }
-async function localPlay() { primeAlarm(); localState.fading = false; if (!(await localArm())) { renderLocal(); return; } localState.desired = { ...localState.desired, verb: VERBS.START }; await localRealize(); renderLocal(); }
+async function localPlay() {
+  primeAlarm(); localState.fading = false;
+  if (!(await localArm())) { renderLocal(); return; }
+  const f = timerFieldsForKey(localState.timerKey); // default-ON 45m unless the user chose otherwise / off
+  localState.desired = { ...localState.desired, verb: VERBS.START, endsAtEpochMs: f ? Date.now() + f.durationMs : null };
+  await localRealize(); renderLocal();
+}
+async function localSetTimerKey(key) { localState.timerKey = key; const f = timerFieldsForKey(key); await localSetTimer(f ? f.durationMs : null); renderLocal(); }
 async function localStop() { localState.fading = false; localState.desired = { ...localState.desired, verb: VERBS.STOP, endsAtEpochMs: null }; await localRealize(); renderLocal(); }
 async function localToggle() { if (localPlaying()) await localStop(); else await localPlay(); }
 async function localSetSound(id) { localState.desired = { ...localState.desired, soundscape: id }; if (localState.armed) await localRealize(); renderLocal(); }
@@ -731,7 +742,7 @@ function renderLocalPlayer() {
     <div class="sec local-soundsec" hidden><div class="sec-label">Sound</div><div class="chips local-sounds"></div></div>
     <div class="local-vol sec" hidden></div>
     <div class="sec"><div class="row"><span class="sec-label" style="margin-bottom:0">Sleep timer</span><span class="local-rem mono spacer" style="text-align:right"></span></div><div class="chips local-timers" style="margin-top:8px"></div></div>
-    <p class="note-safety">🔊 <strong>Keep the volume low</strong> and the device across the room from the crib. Louder isn’t safer, and no app can measure the real loudness. A 30–45&nbsp;min timer is gentler than all night.</p>
+    <p class="note-safety">🔊 <strong>Keep the volume low</strong> and the device across the room from the crib. Louder isn’t safer, and no app can measure the real loudness. Playback winds down after 45&nbsp;min by default — change or turn it off below.</p>
     <p class="faint" style="margin-top:12px">Plays on this phone/tablet — no separate speaker needed. Keep this tab open.</p>`;
   const r = localState.refs = {
     tier: host.querySelector('.local-tier'), eq: host.querySelector('.local-eq'), state: host.querySelector('.local-state'),
@@ -766,12 +777,13 @@ function renderLocalPlayer() {
     rowv.append(slider, pct); r.vol.append(rowv); r.slider = slider; r.setFill = setFill; setFill();
   }
 
-  // Timer chips (local deadline, enforced by the 1s interval below).
-  const addT = (label, ms) => r.timers && r.timers.append(chipBtn(label, () => localSetTimer(ms)));
-  const timers = host.querySelector('.local-timers'); r.timers = timers;
-  for (const min of [15, 30, 45, 60]) addT(`${min}m`, min * 60000);
-  addT('☾ 7:00', Math.max(0, nextWakeEpochMs(7) - Date.now()));
-  addT('off', null);
+  // Timer chips (keyed; default-ON 45m like the rooms — enforced by the 1s interval below).
+  r.timerChips = new Map();
+  r.timers = host.querySelector('.local-timers');
+  const addT = (key, label) => { if (!r.timers) return; const b = chipBtn(label, () => localSetTimerKey(key)); r.timerChips.set(key, b); r.timers.append(b); };
+  for (const min of [15, 30, 45, 60]) addT(`${min}m`, `${min}m`);
+  addT('wake', '☾ 7:00');
+  addT('off', 'off');
 
   renderLocal();
 }
@@ -789,6 +801,7 @@ function renderLocal() {
   r.play.textContent = playing ? '⏸ Pause' : '▶ Play here';
   const sound = localState.desired.soundscape;
   for (const [id, b] of r.soundChips) b.setAttribute('aria-pressed', String(id === sound));
+  if (r.timerChips) for (const [key, b] of r.timerChips) b.setAttribute('aria-pressed', String(key === localState.timerKey));
   if (r.slider && document.activeElement !== r.slider) { r.slider.value = String(localState.desired.gainLinear); r.setFill && r.setFill(); }
   updateLocalRem();
 }
