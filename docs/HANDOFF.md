@@ -15,10 +15,10 @@ Full rationale + the verified iOS constraints are in [`DESIGN.md`](DESIGN.md). R
 
 ## 2. Status
 **MVP complete, tested, and hardened through five adversarial review rounds** (27 → 32 → 13 → 5 →
-a 21-finding production-readiness audit, all fixed). ~2,700 LOC. **80 node tests + 12 real-browser
-Playwright tests, all green.** The container deploy path is verified end-to-end (builds, boots as a
-non-root user, serves both PWAs + Range/206, fail-closed auth, graceful-shutdown state flush,
-volume persistence across restart). Not yet run on real iOS hardware end-to-end — see the honest
+a 21-finding production-readiness audit, all fixed), plus feature + native-UI rounds. **86 node
+tests + 16 real-browser Playwright tests, all green.** The container deploy path is verified
+end-to-end (builds, boots as a non-root user, serves both PWAs + Range/206, fail-closed auth,
+graceful-shutdown state flush, volume persistence across restart). Not yet run on real iOS hardware end-to-end — see the honest
 limits (§7) and the overnight-test gate.
 
 **Round 5 (production hardening) — what changed, by area:**
@@ -59,9 +59,10 @@ limits (§7) and the overnight-test gate.
 npm install                       # one runtime dep: ws
 npm run bake                      # generate seamless white/pink/brown loops + PNG icons
 npm start                         # hub on http://localhost:8080  (localhost is a secure context)
-npm test                          # 83 node tests
+npm test                          # 86 node tests
 npx playwright install chromium   # once
-npm run test:e2e                  # 12 real-browser tests
+npm run test:e2e                  # 16 real-browser tests
+npm run fetch:ambient             # (optional) download curated CC0/PD ambient loops — see below
 ```
 - **Dev:** open `http://localhost:8080/controller/` and `/player/` in two tabs.
 - **Real device:** needs HTTPS (service worker / audioSession / wake lock require a secure context).
@@ -168,17 +169,33 @@ Each device shows an honest 🔒 `lockSummary(tier)` line stating what works whi
 Arm-once flow; start/stop; hub-owned sleep timer; per-device (persisted) volume; white/pink/brown +
 **uploaded** sounds (add via ＋/drag-drop, rename, delete, drag-to-reorder); MediaSession/Wake Lock/
 audioSession (feature-gated); reconnect + full-state resync; heartbeat reaping; bedtime pre-flight +
-spontaneous-failure alarm; now-playing waveform; Apple-HIG light/dark UI; MP_TOKEN auth; Caddy/DNS-01
-deploy; comprehensive node + Playwright tests.
+spontaneous-failure alarm; now-playing waveform; MP_TOKEN auth; Caddy/DNS-01 + Synology deploy;
+comprehensive node + Playwright tests.
+
+**Round 6 — features + native UI:**
+- **Local playback ("🔊 This device"):** the controller reuses the player's AudioEngine so the parent's
+  own phone/tablet is a speaker with **no separate client** — one-tap arm+play, sound switch, tier-gated
+  volume, a local sleep timer, lock-screen control, background recovery. State lives outside the DOM.
+- **Favorites:** hub-synced star on any soundscape (stored in `uploads/index.json`; `POST /api/library/fav`
+  mirrors `/order`, `fav` rides the `/api/library` payload, pinned first — **no protocol change**).
+- **P1 remembered per-room sleep timer + "☾ 7:00"** wall-clock chip; **P2 one-tap "🌙 Start bedtime"**
+  scene (starts every online room with its remembered timer; ACK safety net verifies).
+- **Native iOS mobile layout:** sticky blurred nav bar, the local player as a Now-Playing hero, UIKit
+  press physics, grouped-card rhythm, safe areas, momentum scroll (CSS/HTML only; all tested contracts
+  intact). Prior **Apple-HIG WCAG-AA** color/contrast/44pt pass still in force.
+- **Ambient fetch scaffold** (`npm run fetch:ambient`) — gated on a per-source human license check;
+  writes a separate ambient manifest merged by `libraryJson()`. See §9.
 
 ## 9. Suggested next steps
 - **Real-device overnight test** (the make-or-break unknown) — set the true tier boundaries. The
   container deploy path itself is now verified (build/boot/serve/persist/shutdown); what remains
   unproven is on-device background/lock behavior over a real night.
-- **Expand the sound library** — CC0/PD ambient loops (rain/ocean/forest/fireplace/stream/wind) +
-  favorites. Full sourcing/licensing research + a concrete auto-download-once and hub-synced-favorites
-  design is in [`RESEARCH-AMBIENT-SOUNDS.md`](RESEARCH-AMBIENT-SOUNDS.md) (favorites reuse `MSG.LIBRARY`;
-  no protocol change).
+- **Enable the ambient pack** — the pipeline is scaffolded; the remaining step is human: verify each
+  source's license, fill in `url`/`sha256`, set `"cleared": true` in `pipeline/ambient-sources.json`,
+  and run `npm run fetch:ambient` (needs ffmpeg). Full sourcing/licensing rules + the curated CC0/PD
+  starter pack are in [`RESEARCH-AMBIENT-SOUNDS.md`](RESEARCH-AMBIENT-SOUNDS.md).
+- **P3 ambient health / auto pre-flight** — the next nightly-tap win (P1+P2 shipped): auto-run the probe
+  on reconnect + a persistent "all rooms verified Ns ago" line (mind the alarm-priming caveat).
 - **Baby-monitor (radio-nanny) mode** — mic loudness "cry meter" (ships first) → attended WebRTC
   listen/talk → video peek. Feasibility + the hard iOS limits (screen-on only, never on a locked device)
   in [`RESEARCH-BABY-MONITOR.md`](RESEARCH-BABY-MONITOR.md) (maps to M8).
