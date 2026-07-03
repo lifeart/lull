@@ -254,9 +254,21 @@ function seamlessLoop(gen, loopN, cfN) {
     const t = i / cfN;
     out[i] = raw[i] * Math.sqrt(t) + raw[loopN + i] * Math.sqrt(1 - t);
   }
+  // 1) scale toward the loudness target.
   let scale = Math.pow(10, (LUFS_TARGET - integratedLUFS(out)) / 20);
+  for (let i = 0; i < loopN; i++) out[i] *= scale;
+  // 2) soft-knee limit: round peaks above the knee (tanh) so HIGH-CREST textures (heartbeat lub-dub,
+  //    womb sub-bass) shed crest factor and can actually reach the loudness target — instead of being
+  //    clamped several LU quieter than the steady noises. Steady noise rarely crosses the knee.
+  const knee = PEAK_CEIL * 0.55, span = PEAK_CEIL - knee;
+  for (let i = 0; i < loopN; i++) {
+    const a = Math.abs(out[i]);
+    if (a > knee) out[i] = Math.sign(out[i]) * (knee + span * Math.tanh((a - knee) / span));
+  }
+  // 3) re-match to target after limiting, with a hard peak ceiling as the final backstop.
+  scale = Math.pow(10, (LUFS_TARGET - integratedLUFS(out)) / 20);
   let peak = 0; for (let i = 0; i < loopN; i++) peak = Math.max(peak, Math.abs(out[i] * scale));
-  if (peak > PEAK_CEIL) scale *= PEAK_CEIL / peak; // transient textures land under target rather than clip
+  if (peak > PEAK_CEIL) scale *= PEAK_CEIL / peak;
   for (let i = 0; i < loopN; i++) out[i] *= scale;
   let fp = 0; for (let i = 0; i < loopN; i++) fp = Math.max(fp, Math.abs(out[i]));
   return { out, lufs: integratedLUFS(out), peak: fp };
