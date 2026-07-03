@@ -16,7 +16,7 @@ import { WebSocketServer } from 'ws';
 import { Store } from './store.js';
 import { Hub } from './ws.js';
 import { serveStatic, serveFileWithin } from './static.js';
-import { buildAllowedOrigins, makeVerifyClient, tokenMatches, originAllowed } from './auth.js';
+import { buildAllowedOrigins, makeVerifyClient, tokenMatches, originAllowed, sameHost } from './auth.js';
 import { Uploads, MAX_UPLOAD_BYTES } from './uploads.js';
 
 const MAX_CONCURRENT_UPLOADS = 4; // bound in-flight uploads so a flood can't OOM a 1 GB Pi
@@ -44,7 +44,7 @@ const DEVICE_TTL_MS = Number.isFinite(DEVICE_TTL_DAYS) && DEVICE_TTL_DAYS > 0 ? 
 // Refuse a present-but-disallowed browser Origin on state-mutating /api routes — mirrors the WS
 // Origin allowlist so a malicious page in the parent's browser can't drive the hub cross-origin.
 // Native clients (curl/tests) send no Origin and still pass, gated only by MP_TOKEN. (finding #13)
-function originOk(req) { return originAllowed(req.headers.origin, ALLOWED_ORIGINS); }
+function originOk(req) { return originAllowed(req.headers.origin, ALLOWED_ORIGINS) || sameHost(req.headers.origin, req.headers.host); }
 function denyOrigin(res) { res.writeHead(403, { 'Content-Type': 'text/plain' }).end('forbidden origin'); }
 
 // Defense in depth: a stray rejection/exception should be logged, never crash the always-on hub.

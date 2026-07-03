@@ -1,0 +1,36 @@
+# Hub-only compose for a Synology NAS (Container Manager) — NO bundled Caddy.
+# On Synology you have two easy paths for the required secure context; see docs/DEPLOY-SYNOLOGY.md:
+#   • Plain HTTP on the LAN (simplest)         → the "always-audible, hardware-set-volume" model
+#   • DSM Reverse Proxy + Let's Encrypt (recommended, full features incl. remote volume / over-mute)
+#
+# Container Manager → Project → Create → upload this file (put the repo on the NAS so `build:` works,
+# or pre-build the image and replace `build:` with `image: mesh-playback-hub:latest`).
+
+services:
+  hub:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    # image: mesh-playback-hub:latest   # ← use instead of build: if you pre-built the image
+    container_name: mesh-playback-hub
+    ports:
+      - "8080:8080" # host:container — reach the hub at http://<nas-ip>:8080 (or proxy 443 → here)
+    environment:
+      - PORT=8080
+      - STATE_FILE=/data/state.json
+      - UPLOADS_DIR=/data/uploads
+      # REQUIRED shared secret (control channel). Generate: openssl rand -hex 24
+      # For a trusted home LAN you may instead set MP_ALLOW_OPEN=1 and omit the token.
+      - MP_TOKEN=${MP_TOKEN:-}
+      - MP_ALLOW_OPEN=${MP_ALLOW_OPEN:-}
+      # Origin allowlist. Usually NOT needed: the hub already accepts same-origin requests (Origin
+      # host == the Host you connect to), so http://<nas-ip>:8080 and a Host-preserving reverse proxy
+      # work out of the box. Set this only if a proxy REWRITES the Host header, e.g.:
+      #   MP_ORIGIN=https://mynas.synology.me
+      - MP_ORIGIN=${MP_ORIGIN:-}
+    volumes:
+      # Bind-mount a Synology shared folder. The container fixes ownership on boot (runs its
+      # entrypoint as root, chowns /data, then drops to the unprivileged `node` user), so Synology's
+      # volume ownership doesn't matter. Create the folder first (e.g. /docker/mesh-playback).
+      - /volume1/docker/mesh-playback/data:/data
+    restart: unless-stopped

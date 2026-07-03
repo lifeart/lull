@@ -1,7 +1,7 @@
 // Auth handshake (finding: verifyClient/CSWSH + token had no test).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAllowedOrigins, originAllowed, tokenMatches, makeVerifyClient } from '../hub/auth.js';
+import { buildAllowedOrigins, originAllowed, tokenMatches, makeVerifyClient, sameHost } from '../hub/auth.js';
 
 test('buildAllowedOrigins includes localhost, domain, and trimmed extras', () => {
   const a = buildAllowedOrigins({ port: 8080, domain: 'hub.example.com', extra: 'https://a.example, https://b.example' });
@@ -35,6 +35,25 @@ test('makeVerifyClient covers all done() branches', () => {
   assert.deepEqual(call({ origin: 'http://localhost:8080', req: { url: '/ws' } }), [false, 401, 'unauthorized']);
   assert.deepEqual(call({ origin: 'http://localhost:8080', req: { url: '/ws?token=secret' } }), [true]);
   assert.deepEqual(call({ origin: undefined, req: { url: '/ws?token=secret' } }), [true]); // native + token
+});
+
+test('sameHost: first-party Origin (host==Host) matches; cross-site does not', () => {
+  assert.equal(sameHost('http://192.168.1.50:8080', '192.168.1.50:8080'), true); // LAN IP self-host
+  assert.equal(sameHost('http://synology:8080', 'synology:8080'), true);         // NAS hostname
+  assert.equal(sameHost('https://hub.example', 'hub.example'), true);            // proxy preserving Host
+  assert.equal(sameHost('http://evil.example', '192.168.1.50:8080'), false);     // cross-site attacker
+  assert.equal(sameHost(undefined, '192.168.1.50:8080'), false);
+  assert.equal(sameHost('http://x:8080', undefined), false);
+});
+
+test('verifyClient allows same-origin LAN/NAS access with no MP_ORIGIN, still blocks cross-site', () => {
+  const allowed = buildAllowedOrigins({ port: 8080 }); // only localhost/127.0.0.1 — NOT the LAN IP
+  const vc = makeVerifyClient({ allowed, token: '' });
+  const call = (info) => { let out; vc(info, (...a) => { out = a; }); return out; };
+  // Served at http://192.168.1.50:8080 → browser Origin == Host → allowed without config.
+  assert.deepEqual(call({ origin: 'http://192.168.1.50:8080', req: { url: '/ws', headers: { host: '192.168.1.50:8080' } } }), [true]);
+  // A malicious cross-site page (Origin != Host) is still rejected.
+  assert.deepEqual(call({ origin: 'http://evil.example', req: { url: '/ws', headers: { host: '192.168.1.50:8080' } } }), [false, 403, 'forbidden origin']);
 });
 
 test('with no token configured, any allowed-origin client passes', () => {

@@ -95,9 +95,24 @@ web/index.html       landing tiles
 
 pipeline/bake.js     zero-dep seamless-loop WAV generator (+ calls icon.js)
 pipeline/icon.js     zero-dep PNG app-icon generator (blue tile + white glyph)
-deploy/              Dockerfile, docker-compose.yml (build, restart:unless-stopped), Caddyfile, dnsmasq, install.sh
-docs/                DESIGN.md, HANDOFF.md (this), HARDENING.md, RECOVERY-CARD.md, OVERNIGHT-TEST.md
+deploy/              Dockerfile (non-root via su-exec entrypoint + HEALTHCHECK), docker-compose.yml
+                     (hub + Caddy), docker-compose.synology.yml (hub-only for a NAS), Caddyfile,
+                     entrypoint.sh, dnsmasq, install.sh
+docs/                DESIGN.md, HANDOFF.md (this), HARDENING.md, RECOVERY-CARD.md, OVERNIGHT-TEST.md,
+                     DEPLOY-SYNOLOGY.md (NAS: plain-HTTP vs DSM-HTTPS, and the TLS trade-offs)
+demo/                mock-hub.js (in-browser hub) + index.html; built by pipeline/build-demo.js →
+                     _site/, deployed by .github/workflows/pages.yml
 ```
+
+### Secure context / TLS (what actually needs HTTPS)
+The core — looping `<audio>` that survives lock in a Safari **tab**, WebSocket control, the sleep
+timer, and the parent-phone alarm — **works over plain `http://` on the LAN** (e.g. a Synology at
+`http://<nas-ip>:8080`). HTTPS (a secure context) is required only for the **MODERN** tier extras:
+`audioSession` (remote GainNode volume/fades + over-mute), Wake Lock, service worker / installable
+PWA. On plain HTTP every device caps at tier **MID/LEGACY** and the app degrades cleanly (all APIs are
+feature-detected). The hub accepts **same-origin** requests (Origin host == the Host you connect to),
+so LAN-IP / NAS-hostname / Host-preserving-proxy access needs **no `MP_ORIGIN`**. Full guidance +
+the easy DSM Let's-Encrypt path: [`DEPLOY-SYNOLOGY.md`](DEPLOY-SYNOLOGY.md).
 
 ### The seam rule (important)
 Every layer speaks the SAME verbs/units from `shared/protocol.js` — **never hard-code a verb/state
