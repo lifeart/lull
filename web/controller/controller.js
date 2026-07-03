@@ -764,7 +764,29 @@ setInterval(() => {
 // iOS re-locks audio after a reclaim/background; recover local playback on return.
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && localState.engine) localState.engine.recover().then(renderLocal); });
 
+// --- add a room: a prefilled setup link (name + token) → zero typing on the old device (P4) ---
+function setupAddRoom() {
+  const btn = $('addRoomBtn'), panel = $('addRoomPanel'), nameEl = $('addRoomName'), linkEl = $('addRoomLink'), copyEl = $('addRoomCopy');
+  if (!btn) return;
+  const rebuild = () => {
+    const name = (nameEl.value || '').trim().slice(0, 60);
+    if (!name) { linkEl.removeAttribute('href'); linkEl.textContent = ''; return; } // no name yet → no link
+    const t = authToken();
+    const url = `${location.origin}/player/?name=${encodeURIComponent(name)}${t ? `#t=${encodeURIComponent(t)}` : ''}`;
+    linkEl.href = url; linkEl.textContent = url;
+  };
+  btn.addEventListener('click', () => { panel.hidden = !panel.hidden; if (!panel.hidden) rebuild(); });
+  nameEl.addEventListener('input', rebuild);
+  copyEl.addEventListener('click', async () => {
+    rebuild();
+    try { await navigator.clipboard.writeText(linkEl.href); copyEl.textContent = 'Copied ✓'; setTimeout(() => { copyEl.textContent = 'Copy link'; }, 1500); }
+    catch { copyEl.textContent = 'Select the link above to copy'; } // clipboard needs a secure context
+  });
+  rebuild();
+}
+
 // --- boot ---
+setupAddRoom();
 $('bedtimeBtn').addEventListener('click', runBedtime);
 $('preflightBtn').addEventListener('click', runPreflight);
 $('alarmDismiss').addEventListener('click', clearAlarm);

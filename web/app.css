@@ -319,6 +319,12 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 .healthline.faint { color: var(--faint); font-weight: 400; }
 .healthline.ok { color: var(--play-text); }
 .healthline.bad { color: var(--danger-text); }
+/* Pre-arm hardening checklist (P9) — table-cell rows with a comfortable 44pt tap height. */
+.checkrow { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 6px 0; border-top: 0.5px solid var(--border); cursor: pointer; font-size: 0.95rem; }
+.checkrow:first-child { border-top: 0; }
+.checkrow input { width: 24px; height: 24px; flex: 0 0 auto; accent-color: var(--accent); }
+/* Add-a-room setup link (P4) */
+.addroom-link { display: block; width: 100%; word-break: break-all; font-size: 0.8125rem; background: var(--fill-1); border-radius: 10px; padding: 10px 12px; margin-top: var(--s2); }
 #localPlayer > .row:first-child strong { font-size: 1.1875rem; letter-spacing: -0.02em; }
 #localPlayer .local-play {
   min-height: 56px;

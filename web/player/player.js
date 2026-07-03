@@ -20,7 +20,12 @@ function getDeviceId() {
   return id;
 }
 const deviceId = getDeviceId();
-let friendlyName = localStorage.getItem('mp.name') || '';
+// A setup link can prefill the room name (?name=Nursery) so nothing is typed on the old device. (P4)
+function urlName() {
+  try { const q = new URL(location.href).searchParams.get('name'); if (q) { const n = q.slice(0, 60); localStorage.setItem('mp.name', n); return n; } } catch (e) { console.warn('name param parse failed', e); }
+  return '';
+}
+let friendlyName = urlName() || localStorage.getItem('mp.name') || '';
 
 const caps = detectCaps();
 const tier = tierFromCaps(caps);
@@ -256,10 +261,38 @@ setInterval(async () => {
   if (armed && Date.now() - lastReportAt >= 5000) report();
 }, 1000);
 
+// --- pre-arm hardening checklist (advisory; persisted per device) (P9) ---
+const HARDEN = [
+  ['power', '🔌 Plugged into power'],
+  ['autolock', '🔒 Auto-Lock = Never (or Guided Access on)'],
+  ['updates', '🔄 Automatic Updates off'],
+  ['ring', '🔔 Ring switch on, volume up'],
+  ['lowpower', '🪫 Low Power Mode off'],
+  ['tabs', '🗂 Safari → Close Tabs = Manually'],
+];
+function updateHardenCount() {
+  const done = HARDEN.filter(([k]) => localStorage.getItem('mp.harden.' + k) === '1').length;
+  const el = $('hardenCount'); if (el) el.textContent = `${done}/${HARDEN.length}`;
+}
+function buildHardening() {
+  const wrap = $('hardenList'); if (!wrap) return;
+  wrap.innerHTML = '';
+  for (const [key, label] of HARDEN) {
+    const row = document.createElement('label'); row.className = 'checkrow';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.className = 'harden'; cb.dataset.key = key;
+    cb.checked = localStorage.getItem('mp.harden.' + key) === '1';
+    cb.addEventListener('change', () => { localStorage.setItem('mp.harden.' + key, cb.checked ? '1' : '0'); updateHardenCount(); });
+    const span = document.createElement('span'); span.textContent = label;
+    row.append(cb, span); wrap.append(row);
+  }
+  updateHardenCount();
+}
+
 // --- boot ---
 (async function boot() {
   await loadLibrary();
   $('name').value = friendlyName;
+  buildHardening();
   $('armBtn').addEventListener('click', armFromGesture);
   $('overlay').addEventListener('click', resumeFromGesture);
   $('overlay').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') resumeFromGesture(); });

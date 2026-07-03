@@ -334,6 +334,39 @@ test('forget: an offline (ghost) device can be removed from the controller (find
   await ctx.close();
 });
 
+test('pre-arm hardening checklist persists across a reload (P9)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  await p.goto('/player/');
+  const list = p.locator('#hardenList');
+  await expect(list.locator('.checkrow')).toHaveCount(6, { timeout: 10000 });
+  await expect(p.locator('#hardenCount')).toHaveText('0/6');
+  await list.locator('.harden[data-key="power"]').check();
+  await list.locator('.harden[data-key="ring"]').check();
+  await expect(p.locator('#hardenCount')).toHaveText('2/6');
+  await p.reload(); // persisted per device
+  await expect(p.locator('#hardenCount')).toHaveText('2/6', { timeout: 10000 });
+  await expect(p.locator('.harden[data-key="power"]')).toBeChecked();
+  await ctx.close();
+});
+
+test('add-a-room link prefills the name so the device needs no typing (P4)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  await c.locator('#addRoomBtn').click();
+  await c.locator('#addRoomName').fill('Nursery');
+  const href = await c.locator('#addRoomLink').getAttribute('href');
+  expect(href).toMatch(/\/player\/\?name=Nursery/);
+
+  // Opening that link prefills the name → boots straight to "Tap to arm Nursery" (P8), no typing.
+  const p = await ctx.newPage();
+  await p.goto(href);
+  await expect(p.locator('#overlayText')).toContainText('Nursery', { timeout: 10000 });
+  await expect(p.locator('#setup')).toBeHidden();
+  await ctx.close();
+});
+
 test('ambient health: the controller auto-verifies rooms with no manual check (P3)', async ({ browser }) => {
   const ctx = await browser.newContext();
   const player = await ctx.newPage();
