@@ -242,6 +242,9 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 .fav:active { opacity: 0.5; }
 .fav:focus-visible { outline: none; box-shadow: var(--ring); }
 .card.dropping { outline: 2px dashed var(--accent); outline-offset: -6px; }
+/* "This device" local player — subtly distinguished as the primary, self-contained speaker. */
+.card.local { box-shadow: inset 3px 0 0 var(--accent), var(--shadow); }
+.card.local:empty { display: none; }
 .chip-add { color: var(--accent); font-weight: 700; }
 /* ≥44px hit areas so stressed one-handed / VoiceOver users can operate the secondary controls — finding #20 */
 .link-btn { -webkit-appearance: none; appearance: none; background: transparent; border: 0; padding: 6px 8px; min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--accent); cursor: pointer; border-radius: 8px; }

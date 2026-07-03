@@ -228,6 +228,7 @@ test('drag-to-reorder sounds updates the chip order on device cards', async ({ b
   await expect(chips.first()).toHaveText('White noise'); // default order
 
   const list = c.locator('#uploadList');
+  await list.scrollIntoViewIfNeeded(); // the local-player card makes the page taller than the viewport
   const brownHandle = list.locator('.uprow', { hasText: 'Brown noise' }).locator('.handle');
   const firstRow = list.locator('.uprow').first();
   const bh = await brownHandle.boundingBox();
@@ -326,6 +327,31 @@ test('forget: an offline (ghost) device can be removed from the controller (find
   await expect(forget).toHaveText(/Confirm/i);
   await forget.click();                       // confirm → hub drops the registration
   await expect(card).toHaveCount(0, { timeout: 10000 }); // card disappears
+  await ctx.close();
+});
+
+test('local playback: the main app plays sound on THIS device with no speaker client', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const c = await ctx.newPage();
+  await c.goto('/controller/'); // no player device armed at all
+  const local = c.locator('#localPlayer');
+  await expect(local.locator('.local-play')).toHaveText(/Play here/i, { timeout: 10000 });
+
+  // One tap arms + plays locally.
+  await local.locator('.local-play').click();
+  await expect(local.locator('.local-state')).toHaveText('playing', { timeout: 10000 });
+  await expect(local.locator('.local-play')).toHaveText(/Pause/i);
+  await expect(local.locator('.local-eq')).toBeVisible();
+
+  // Switch sound locally, then a local sleep timer starts a countdown.
+  await local.locator('.local-sounds').getByRole('button', { name: 'Pink noise' }).click();
+  await expect(local.locator('.local-sounds').getByRole('button', { name: 'Pink noise' })).toHaveAttribute('aria-pressed', 'true');
+  await local.locator('.local-timers').getByRole('button', { name: '15m' }).click();
+  await expect(local.locator('.local-rem')).toHaveText(/1[45]:\d\d/, { timeout: 10000 });
+
+  // Pause stops it.
+  await local.locator('.local-play').click();
+  await expect(local.locator('.local-state')).toHaveText('stopped', { timeout: 10000 });
   await ctx.close();
 });
 

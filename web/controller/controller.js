@@ -5,10 +5,11 @@
 import {
   MSG, ROLES, VERBS, STATES,
   makeHello, makeCommand, makeProbe, remainingSec,
-  ACK_TIMEOUT_MS, GAIN_SOFT_CAP,
+  ACK_TIMEOUT_MS, GAIN_SOFT_CAP, GAIN_DEFAULT,
   RECONNECT_BASE_MS, RECONNECT_MAX_MS,
 } from '/shared/protocol.js';
-import { tierControls, lockSummary } from '/shared/tiers.js';
+import { tierControls, lockSummary, detectCaps, tierFromCaps } from '/shared/tiers.js';
+import { AudioEngine } from '../player/audio.js'; // reuse the player's iOS audio engine locally
 import { primeAlarm, startAlarm, stopAlarm } from './alarm.js';
 
 const $ = (id) => document.getElementById(id);
@@ -399,11 +400,12 @@ async function loadSoundscapes() {
     if (res.ok) {
       const m = await res.json();
       if (Array.isArray(m.soundscapes) && m.soundscapes.length) {
-        soundscapes = m.soundscapes.map((s) => ({ id: s.id, label: s.label || s.id, kind: s.kind || 'noise', fav: !!s.fav }));
+        soundscapes = m.soundscapes.map((s) => ({ id: s.id, label: s.label || s.id, kind: s.kind || 'noise', fav: !!s.fav, url: s.url }));
       }
     }
   } catch (e) { console.warn('library load failed', e); }
   renderUploadList();
+  renderLocalPlayer();
 }
 
 // --- uploaded-sound management (rename / delete) ---
@@ -576,6 +578,136 @@ function rebuildAllCards() {
   cards.clear();
   render();
 }
+
+// --- local playback: THIS device is its own speaker (no separate client needed) --------------------
+// Reuses the player's AudioEngine so the main app can play any library sound (noise or an uploaded
+// track) directly — arm once with a tap (iOS gesture), then play/stop/volume/sound/timer locally.
+// State lives here (not in the DOM), so a library-driven rebuild never tears down playback.
+const localState = {
+  engine: null, armed: false, tier: null, controls: null, refs: {},
+  desired: { verb: VERBS.STOP, gainLinear: GAIN_DEFAULT, soundscape: 'white', endsAtEpochMs: null },
+};
+const localUrlFor = (id) => { const s = soundscapes.find((x) => x.id === id); return (s && s.url) || '/player/assets/white.wav'; };
+const localPlaying = () => !!localState.engine && localState.engine.getState() === STATES.PLAYING;
+async function localRealize() {
+  if (!localState.engine) return;
+  await localState.engine.applyDesired({ ...localState.desired, url: localUrlFor(localState.desired.soundscape) });
+}
+async function localArm() {
+  if (localState.engine) return true;
+  const caps = detectCaps(); const tier = tierFromCaps(caps); caps.tier = tier;
+  localState.tier = tier; localState.controls = tierControls(tier, caps);
+  localState.engine = new AudioEngine({ tier, caps, onState: renderLocal });
+  localState.engine.onIntent = (verb) => { if (verb === VERBS.START) localPlay(); else localStop(); }; // lock-screen controls
+  try {
+    await localState.engine.arm({ soundscapeId: localState.desired.soundscape, url: localUrlFor(localState.desired.soundscape), gainLinear: localState.desired.gainLinear });
+    localState.armed = true; return true;
+  } catch (e) { localState.engine = null; localState.armed = false; console.warn('local arm failed', e); return false; }
+}
+async function localPlay() { primeAlarm(); if (!(await localArm())) { renderLocal(); return; } localState.desired = { ...localState.desired, verb: VERBS.START }; await localRealize(); renderLocal(); }
+async function localStop() { localState.desired = { ...localState.desired, verb: VERBS.STOP, endsAtEpochMs: null }; await localRealize(); renderLocal(); }
+async function localToggle() { if (localPlaying()) await localStop(); else await localPlay(); }
+async function localSetSound(id) { localState.desired = { ...localState.desired, soundscape: id }; if (localState.armed) await localRealize(); renderLocal(); }
+function localSetGain(g) { localState.desired = { ...localState.desired, gainLinear: g }; if (localState.armed) localRealize(); }
+async function localSetTimer(durationMs) {
+  if (durationMs == null) { localState.desired = { ...localState.desired, endsAtEpochMs: null }; if (localState.armed) await localRealize(); renderLocal(); return; }
+  if (!(await localArm())) { renderLocal(); return; }
+  localState.desired = { ...localState.desired, endsAtEpochMs: Date.now() + durationMs, verb: VERBS.START };
+  await localRealize(); renderLocal();
+}
+
+// Build the "This device" card (rebuilt on library change; engine state is preserved in localState).
+function renderLocalPlayer() {
+  const host = $('localPlayer'); if (!host) return;
+  host.innerHTML = `
+    <div class="row">
+      <strong>🔊 This device</strong>
+      <span class="badge local-tier"></span>
+      <span class="spacer"></span>
+      <span class="eq local-eq" hidden aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span>
+      <span class="statechip local-state"></span>
+    </div>
+    <div class="btnrow" style="margin-top:14px">
+      <button class="btn btn-play local-play block" style="grid-column:1 / -1"></button>
+    </div>
+    <div class="sec local-soundsec" hidden><div class="sec-label">Sound</div><div class="chips local-sounds"></div></div>
+    <div class="local-vol sec" hidden></div>
+    <div class="sec"><div class="row"><span class="sec-label" style="margin-bottom:0">Sleep timer</span><span class="local-rem mono spacer" style="text-align:right"></span></div><div class="chips local-timers" style="margin-top:8px"></div></div>
+    <p class="faint" style="margin-top:12px">Plays on this phone/tablet — no separate speaker needed. Keep this tab open.</p>`;
+  const r = localState.refs = {
+    tier: host.querySelector('.local-tier'), eq: host.querySelector('.local-eq'), state: host.querySelector('.local-state'),
+    play: host.querySelector('.local-play'), rem: host.querySelector('.local-rem'),
+    soundsec: host.querySelector('.local-soundsec'), sounds: host.querySelector('.local-sounds'),
+    vol: host.querySelector('.local-vol'), soundChips: new Map(), slider: null, setFill: null,
+  };
+  r.play.addEventListener('click', localToggle);
+
+  // Sound chooser (only if there's more than one sound).
+  if (soundscapes.length > 1) {
+    r.soundsec.hidden = false;
+    for (const s of soundscapes) {
+      const b = chipBtn(s.label, () => localSetSound(s.id));
+      r.soundChips.set(s.id, b); r.sounds.append(b);
+    }
+  }
+
+  // Volume (only where the tier can honor it, once armed — otherwise hardware buttons).
+  const controls = localState.controls || tierControls(tierFromCaps(detectCaps()), detectCaps());
+  if (controls.remoteVolume || controls.foregroundVolume) {
+    r.vol.hidden = false;
+    r.vol.append(secLabel('Volume'));
+    const rowv = document.createElement('div'); rowv.className = 'slider-row';
+    const slider = document.createElement('input');
+    slider.type = 'range'; slider.min = '0'; slider.max = String(GAIN_SOFT_CAP); slider.step = '0.02';
+    slider.value = String(localState.desired.gainLinear); slider.setAttribute('aria-label', 'Volume (this device)');
+    const pct = document.createElement('span'); pct.className = 'muted mono'; pct.style.minWidth = '3.5ch'; pct.style.textAlign = 'right';
+    const setFill = () => { slider.style.setProperty('--fill', `${(Number(slider.value) / GAIN_SOFT_CAP) * 100}%`); pct.textContent = `${Math.round(Number(slider.value) * 100)}%`; };
+    slider.addEventListener('input', setFill);
+    slider.addEventListener('change', () => localSetGain(Number(slider.value)));
+    rowv.append(slider, pct); r.vol.append(rowv); r.slider = slider; r.setFill = setFill; setFill();
+  }
+
+  // Timer chips (local deadline, enforced by the 1s interval below).
+  const addT = (label, ms) => r.timers && r.timers.append(chipBtn(label, () => localSetTimer(ms)));
+  const timers = host.querySelector('.local-timers'); r.timers = timers;
+  for (const min of [15, 30, 45, 60]) addT(`${min}m`, min * 60000);
+  addT('☾ 7:00', Math.max(0, nextWakeEpochMs(7) - Date.now()));
+  addT('off', null);
+
+  renderLocal();
+}
+
+function renderLocal() {
+  const r = localState.refs; if (!r || !r.play) return;
+  const st = localState.engine ? localState.engine.getState() : STATES.STOPPED;
+  const playing = st === STATES.PLAYING;
+  r.tier.textContent = localState.tier || '';
+  r.tier.hidden = !localState.tier;
+  r.eq.hidden = !playing;
+  r.state.textContent = !localState.armed ? '' : playing ? 'playing' : st === STATES.REQUIRES_GESTURE ? 'tap to resume' : st === STATES.ERROR ? 'error' : 'stopped';
+  r.state.className = 'statechip local-state' + (playing ? ' playing' : (st === STATES.ERROR || st === STATES.REQUIRES_GESTURE) ? ' bad' : '');
+  r.play.textContent = playing ? '⏸ Pause' : '▶ Play here';
+  const sound = localState.desired.soundscape;
+  for (const [id, b] of r.soundChips) b.setAttribute('aria-pressed', String(id === sound));
+  if (r.slider && document.activeElement !== r.slider) { r.slider.value = String(localState.desired.gainLinear); r.setFill && r.setFill(); }
+  updateLocalRem();
+}
+function updateLocalRem() {
+  const r = localState.refs; if (!r || !r.rem) return;
+  const d = localState.desired;
+  const rem = (localState.armed && d.verb === VERBS.START && d.endsAtEpochMs) ? Math.max(0, Math.round((d.endsAtEpochMs - Date.now()) / 1000)) : null;
+  r.rem.textContent = rem != null ? fmt(rem) : '—';
+}
+// Local sleep-timer + countdown tick.
+setInterval(() => {
+  const d = localState.desired;
+  if (localState.armed && d.verb === VERBS.START && d.endsAtEpochMs && Date.now() >= d.endsAtEpochMs) {
+    localState.desired = { ...d, verb: VERBS.STOP, endsAtEpochMs: null }; localRealize(); renderLocal();
+  }
+  updateLocalRem();
+}, 1000);
+// iOS re-locks audio after a reclaim/background; recover local playback on return.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && localState.engine) localState.engine.recover().then(renderLocal); });
 
 // --- boot ---
 $('bedtimeBtn').addEventListener('click', runBedtime);
