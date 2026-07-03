@@ -16,7 +16,7 @@ Full rationale + the verified iOS constraints are in [`DESIGN.md`](DESIGN.md). R
 ## 2. Status
 **MVP complete, tested, and hardened through five adversarial review rounds** (27 → 32 → 13 → 5 →
 a 21-finding production-readiness audit, all fixed), plus feature + native-UI rounds. **86 node
-tests + 16 real-browser Playwright tests, all green.** The container deploy path is verified
+tests + 21 real-browser Playwright tests, all green.** The container deploy path is verified
 end-to-end (builds, boots as a non-root user, serves both PWAs + Range/206, fail-closed auth,
 graceful-shutdown state flush, volume persistence across restart). Not yet run on real iOS hardware end-to-end — see the honest
 limits (§7) and the overnight-test gate.
@@ -61,7 +61,7 @@ npm run bake                      # generate seamless white/pink/brown loops + P
 npm start                         # hub on http://localhost:8080  (localhost is a secure context)
 npm test                          # 86 node tests
 npx playwright install chromium   # once
-npm run test:e2e                  # 16 real-browser tests
+npm run test:e2e                  # 21 real-browser tests
 npm run fetch:ambient             # (optional) download curated CC0/PD ambient loops — see below
 ```
 - **Dev:** open `http://localhost:8080/controller/` and `/player/` in two tabs.
@@ -178,22 +178,30 @@ comprehensive node + Playwright tests.
   volume, a local sleep timer, lock-screen control, background recovery. State lives outside the DOM.
 - **Favorites:** hub-synced star on any soundscape (stored in `uploads/index.json`; `POST /api/library/fav`
   mirrors `/order`, `fav` rides the `/api/library` payload, pinned first — **no protocol change**).
-- **P1 remembered per-room sleep timer + "☾ 7:00"** wall-clock chip; **P2 one-tap "🌙 Start bedtime"**
-  scene (starts every online room with its remembered timer; ACK safety net verifies).
+- **Tap-reduction (UX proposal P1–P9):** **P1** remembered per-room timer + "☾ 7:00" chip; **P2**
+  one-tap "🌙 Start bedtime" scene; **P3** silent auto pre-flight → a persistent nav-bar health line
+  ("✓ N verified Ns ago"); **P5** alarm auto-de-escalates when a room recovers; **P8** returning device
+  boots to a big "Tap to arm <name>"; **P9** advisory pre-arm hardening checklist (N/6); **P4** "＋ Add a
+  room" prefill link (`/player/?name=…#t=…`) → zero typing on the device. (P6 = the ambient library
+  below; P7 volume-presets skipped as marginal.)
+- **Expanded sound library:** 7 **synthesized** ambient loops — rain, ocean, wind, fireplace, fan, womb,
+  heartbeat — generated procedurally in `pipeline/bake.js` (zero-dep, no license, offline), tagged
+  `kind:'ambient'`. Optional real-recording **download** path (`npm run fetch:ambient`) is scaffolded and,
+  for personal use, license-relaxed; see §9.
 - **Native iOS mobile layout:** sticky blurred nav bar, the local player as a Now-Playing hero, UIKit
   press physics, grouped-card rhythm, safe areas, momentum scroll (CSS/HTML only; all tested contracts
   intact). Prior **Apple-HIG WCAG-AA** color/contrast/44pt pass still in force.
-- **Ambient fetch scaffold** (`npm run fetch:ambient`) — gated on a per-source human license check;
-  writes a separate ambient manifest merged by `libraryJson()`. See §9.
 
 ## 9. Suggested next steps
 - **Real-device overnight test** (the make-or-break unknown) — set the true tier boundaries. The
   container deploy path itself is now verified (build/boot/serve/persist/shutdown); what remains
   unproven is on-device background/lock behavior over a real night.
-- **Enable the ambient pack** — the pipeline is scaffolded; the remaining step is human: verify each
-  source's license, fill in `url`/`sha256`, set `"cleared": true` in `pipeline/ambient-sources.json`,
-  and run `npm run fetch:ambient` (needs ffmpeg). Full sourcing/licensing rules + the curated CC0/PD
-  starter pack are in [`RESEARCH-AMBIENT-SOUNDS.md`](RESEARCH-AMBIENT-SOUNDS.md).
+- **Baby-monitor (M8a "cry meter")** — the researched next feature, but genuinely gated on an on-device
+  spike first (mic capture flips the iOS audio session; behavior varies by device — see
+  [`RESEARCH-BABY-MONITOR.md`](RESEARCH-BABY-MONITOR.md) §M8-S0). Build after measuring on real hardware.
+- **Optional real-recording ambient pack** — the synthesized loops already ship; if you want field
+  recordings, `npm run fetch:ambient` is scaffolded (fill `url`/`sha256`, set `"cleared": true`, needs
+  ffmpeg; license-relaxed for personal use). Rules in [`RESEARCH-AMBIENT-SOUNDS.md`](RESEARCH-AMBIENT-SOUNDS.md).
 - **P3 ambient health / auto pre-flight** — the next nightly-tap win (P1+P2 shipped): auto-run the probe
   on reconnect + a persistent "all rooms verified Ns ago" line (mind the alarm-priming caveat).
 - **Baby-monitor (radio-nanny) mode** — mic loudness "cry meter" (ships first) → attended WebRTC
