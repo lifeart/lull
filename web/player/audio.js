@@ -100,6 +100,7 @@ export class AudioEngine {
   // Realize a full desired state. Hub/player both derive desired via the shared reducer, so
   // this is the ONLY place audio is actuated — no divergent interpretations.
   async applyDesired(desired) {
+    clearTimeout(this._fadeTimer); // a new actuation cancels any in-progress timer fade-out
     if (!this.armed) return;
     if (desired.soundscape && desired.soundscape !== this.currentSoundscape) {
       // Only start audio during the swap if it should be sounding (gain-tier keep-alive, or START);
@@ -151,6 +152,32 @@ export class AudioEngine {
     // click-free ~1.2s fade
     p.setTargetAtTime(Math.max(0.0001, target), now, 0.35);
     p.setValueAtTime(target, now + 1.5);
+  }
+
+  // Gentle sleep-timer wind-down: ramp to silence over `seconds`, then stop. Only foreground/gain
+  // paths can actually fade (a locked device's Web Audio is suspended, and LEGACY volume is fixed),
+  // so elsewhere this is a clean stop — we don't pretend to fade what iOS won't let us. Used by the
+  // local "This device" player, which is always on-screen.
+  fadeOutAndStop(seconds = 8) {
+    if (!this.armed) return;
+    const stop = () => this.applyDesired({ verb: VERBS.STOP, gainLinear: 0, soundscape: this.currentSoundscape });
+    if (usesGain(this.tier) && this.gain && this.ctx && this.ctx.state === 'running') {
+      const now = this.ctx.currentTime, p = this.gain.gain;
+      p.cancelScheduledValues(now);
+      p.setValueAtTime(Math.max(0.0001, p.value), now);
+      p.setTargetAtTime(0.0001, now, seconds / 4); // exponential fade, ~silent by `seconds`
+      this._fadeTimer = setTimeout(stop, seconds * 1000);
+    } else if (this.fgVolume && this.el && !this.el.paused) {
+      const start = this.el.volume, steps = Math.max(1, Math.round(seconds * 20)), dt = (seconds * 1000) / steps;
+      let k = 0;
+      const tick = () => {
+        k += 1; this.el.volume = Math.max(0, start * (1 - k / steps));
+        this._fadeTimer = k < steps ? setTimeout(tick, dt) : (stop(), null);
+      };
+      this._fadeTimer = setTimeout(tick, dt);
+    } else {
+      stop(); // LEGACY / suspended — a fade is impossible here; stop cleanly
+    }
   }
 
   async _swapSoundscape(soundscapeId, url, shouldPlay = true) {

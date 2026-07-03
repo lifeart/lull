@@ -5,7 +5,7 @@
 import {
   MSG, ROLES, VERBS, STATES,
   makeHello, makeCommand, makeProbe, remainingSec,
-  ACK_TIMEOUT_MS, GAIN_SOFT_CAP, GAIN_DEFAULT,
+  ACK_TIMEOUT_MS, GAIN_SOFT_CAP, GAIN_DEFAULT, SOUNDSCAPE_DEFAULT,
   RECONNECT_BASE_MS, RECONNECT_MAX_MS,
 } from '/shared/protocol.js';
 import { tierControls, lockSummary, detectCaps, tierFromCaps } from '/shared/tiers.js';
@@ -683,7 +683,7 @@ function rebuildAllCards() {
 // State lives here (not in the DOM), so a library-driven rebuild never tears down playback.
 const localState = {
   engine: null, armed: false, tier: null, controls: null, refs: {},
-  desired: { verb: VERBS.STOP, gainLinear: GAIN_DEFAULT, soundscape: 'white', endsAtEpochMs: null },
+  desired: { verb: VERBS.STOP, gainLinear: GAIN_DEFAULT, soundscape: SOUNDSCAPE_DEFAULT, endsAtEpochMs: null },
 };
 const localUrlFor = (id) => { const s = soundscapes.find((x) => x.id === id); return (s && s.url) || '/player/assets/white.wav'; };
 const localPlaying = () => !!localState.engine && localState.engine.getState() === STATES.PLAYING;
@@ -731,6 +731,7 @@ function renderLocalPlayer() {
     <div class="sec local-soundsec" hidden><div class="sec-label">Sound</div><div class="chips local-sounds"></div></div>
     <div class="local-vol sec" hidden></div>
     <div class="sec"><div class="row"><span class="sec-label" style="margin-bottom:0">Sleep timer</span><span class="local-rem mono spacer" style="text-align:right"></span></div><div class="chips local-timers" style="margin-top:8px"></div></div>
+    <p class="note-safety">🔊 <strong>Keep the volume low</strong> and the device across the room from the crib. Louder isn’t safer, and no app can measure the real loudness. A 30–45&nbsp;min timer is gentler than all night.</p>
     <p class="faint" style="margin-top:12px">Plays on this phone/tablet — no separate speaker needed. Keep this tab open.</p>`;
   const r = localState.refs = {
     tier: host.querySelector('.local-tier'), eq: host.querySelector('.local-eq'), state: host.querySelector('.local-state'),
@@ -800,7 +801,9 @@ function updateLocalRem() {
 setInterval(() => {
   const d = localState.desired;
   if (localState.armed && d.verb === VERBS.START && d.endsAtEpochMs && Date.now() >= d.endsAtEpochMs) {
-    localState.desired = { ...d, verb: VERBS.STOP, endsAtEpochMs: null }; localRealize(); renderLocal();
+    localState.desired = { ...d, verb: VERBS.STOP, endsAtEpochMs: null };
+    localState.engine.fadeOutAndStop(8); // gentle wind-down (this player is always on-screen)
+    renderLocal();
   }
   updateLocalRem();
 }, 1000);

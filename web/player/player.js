@@ -36,7 +36,7 @@ let engine = null;
 const monitor = new Monitor(); // baby-monitor "cry meter" (M8a) — opt-in, screen-on only
 let ws = null;
 let desired = defaultDesired();
-let soundscapeUrls = { white: '/player/assets/white.wav' };
+let soundscapeUrls = { pink: '/player/assets/pink.wav', white: '/player/assets/white.wav' };
 let soundscapeLabels = { white: 'White noise' };
 let reconnectDelay = RECONNECT_BASE_MS;
 let armed = false;
@@ -182,7 +182,7 @@ async function armFromGesture() {
     await realize(); report();
   };
   try {
-    await engine.arm({ soundscapeId: 'white', url: urlFor('white'), gainLinear: desired.gainLinear });
+    await engine.arm({ soundscapeId: desired.soundscape, url: urlFor(desired.soundscape), gainLinear: desired.gainLinear });
     armed = true;
     hideOverlay();
     // Re-open the baby monitor within this same arm gesture if it was on before. (M8a)

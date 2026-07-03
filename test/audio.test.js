@@ -59,6 +59,28 @@ test('MODERN: STOP ramps gain to ~0 but keeps the element playing (keep-alive)',
   assert.ok(Math.min(...targets) <= 0.0002, 'ramps toward silence');
 });
 
+test('MODERN: timer fade-out ramps to silence, then stops', async () => {
+  const eng = modernEngine();
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'pink' });
+  eng.gain.gain.calls.length = 0;
+  eng.fadeOutAndStop(0.05); // 50 ms fade
+  const targets = eng.gain.gain.calls.filter((c) => c[0] === 'target').map((c) => c[1]);
+  assert.ok(targets.some((t) => t <= 0.0002), 'schedules a fade toward silence');
+  assert.equal(eng.getState(), STATES.PLAYING, 'still playing during the fade');
+  await new Promise((r) => setTimeout(r, 90));
+  assert.equal(eng.getState(), STATES.STOPPED, 'stops once the fade completes');
+  assert.equal(eng.getGain(), 0);
+});
+
+test('a new actuation cancels an in-progress timer fade-out', async () => {
+  const eng = modernEngine();
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'pink' });
+  eng.fadeOutAndStop(0.05);
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'pink' }); // cancels the pending stop
+  await new Promise((r) => setTimeout(r, 90));
+  assert.equal(eng.getState(), STATES.PLAYING, 'fade cancelled — still playing, not stopped');
+});
+
 test('MODERN: gain above the soft cap is clamped', async () => {
   const eng = modernEngine();
   await eng.applyDesired({ verb: VERBS.START, gainLinear: 5, soundscape: 'white' });

@@ -316,6 +316,15 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 /* Ambient health line in the nav bar (P3) — persistent "verified Ns ago" / "not responding". */
 .healthline { margin: 2px 0 0; font-size: 0.8125rem; font-weight: 600; letter-spacing: -0.01em; }
 .healthline:empty { display: none; }
+
+/* Hearing-safety note (player setup + local player). Subtle grouped-note callout, not an alarm —
+ * placement/volume/duration guidance from docs/RESEARCH-SOUND-SCIENCE.md §2. */
+.note-safety {
+  margin: 16px 0 0; padding: 12px 14px;
+  font-size: 0.8125rem; line-height: 1.4; color: var(--faint);
+  background: var(--fill-1); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.note-safety strong { color: var(--text); font-weight: 600; }
 .healthline.faint { color: var(--faint); font-weight: 400; }
 .healthline.ok { color: var(--play-text); }
 .healthline.bad { color: var(--danger-text); }

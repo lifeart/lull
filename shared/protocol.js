@@ -58,7 +58,11 @@ export const TIERS = Object.freeze({
 // Safety + defaults. GAIN_SOFT_CAP caps the DIGITAL signal (not acoustic SPL — see docs safety note).
 export const GAIN_SOFT_CAP = 0.6;
 export const GAIN_DEFAULT = 0.3;
-export const SOUNDSCAPE_DEFAULT = 'white';
+// Pink is the default masker: broadband enough to cover household/speech noise, but with the harsh
+// high-frequency energy of white rolled off — gentler and the least-fatiguing steady option for a
+// nursery (docs/RESEARCH-SOUND-SCIENCE.md §1c/§3). No noise colour has ever won a head-to-head
+// infant sleep trial, so this is a comfort/safety choice, not an efficacy claim.
+export const SOUNDSCAPE_DEFAULT = 'pink';
 
 // Timing.
 export const ACK_TIMEOUT_MS = 3000; // controller alarms if a command isn't ACKed within this
