@@ -81,18 +81,15 @@ function poissonEvents(n, ratePerSec) {
   return evs;
 }
 
-// Add one modal grain: a short noise burst rung through a 2-pole resonator → a natural "plink"
-// (rain drop / fire crackle). Decays with exp T60≈decaySec; renders only its own lifetime.
-function addGrain(out, start, freq, decaySec, amp, exciteSec = 0.001) {
-  const R = Math.exp(-1 / (decaySec * SR)), theta = (2 * Math.PI * freq) / SR;
-  const c1 = 2 * R * Math.cos(theta), c2 = R * R;
-  const life = Math.min(out.length - start, Math.ceil(decaySec * SR * 5)), exN = Math.max(1, Math.round(exciteSec * SR));
-  let y1 = 0, y2 = 0;
+// Add one transient "splat": a short noise burst shaped by a LOW-Q band-pass and an exponential
+// decay. Broadband (not a ringing tone) — the right primitive for a raindrop impact or a fire pop.
+// (A high-Q resonator here would ring like an electronic "plink", which is NOT how rain sounds.)
+function addSplat(out, start, centerHz, decaySec, amp) {
+  const bp = biquad('bp', centerHz, 0.9); // low Q → broadband splat, not a pitched blip
+  const life = Math.min(out.length - start, Math.ceil(decaySec * SR * 4)), tau = decaySec * SR;
   for (let k = 0; k < life; k++) {
-    const exc = k < exN ? rnd() : 0, y = c1 * y1 - c2 * y2 + exc;
-    y2 = y1; y1 = y;
-    const idx = start + k;
-    if (idx >= 0 && idx < out.length) out[idx] += y * amp;
+    const idx = start + k; if (idx >= out.length) break;
+    out[idx] += bp(rnd()) * Math.exp(-k / tau) * amp;
   }
 }
 
@@ -121,12 +118,21 @@ function brown(n) { // leaky integrator (−6 dB/oct)
 // --- procedural ambient textures (our own synthesis — no license, works fully offline) ----------
 // Periodic modulation uses (i % loopN) so whole cycles fit the loop → seamless across the wrap.
 
-function rain(n) { // filtered-noise bed + Poisson resonant droplets (§4)
+function rain(n, loopN) { // dense filtered-noise WASH (the roar) + broadband splats (the patter)
   const out = new Float32Array(n);
-  const hp = biquad('hp', 1500, 0.7), lp = biquad('lp', 8000, 0.7);
-  for (let i = 0; i < n; i++) out[i] = lp(hp(rnd())) * 0.5; // hissy bed, harsh top shaved
-  for (const ev of poissonEvents(n, 26)) // drops: resonant plinks, pitch + decay varied per drop
-    addGrain(out, ev, 1200 + Math.random() * 3800, 0.02 + Math.random() * 0.06, 0.12 + Math.random() * 0.22, 0.0015);
+  // Two shaped-noise beds: a mid "roar" (the mass of rain) and a high "hiss" (fine spray), each
+  // slowly swelling so intensity waves like real rain. Whole-cycle LFOs → seamless loop.
+  const roarHP = biquad('hp', 300, 0.7), roarLP = biquad('lp', 2600, 0.7);
+  const hissHP = biquad('hp', 3200, 0.7), hissLP = biquad('lp', 9000, 0.7);
+  for (let i = 0; i < n; i++) {
+    const p = (i % loopN) / loopN;
+    const roarMod = 0.7 + 0.3 * (0.5 - 0.5 * Math.cos(2 * Math.PI * 3 * p));         // 3 whole cycles
+    const hissMod = 0.7 + 0.3 * (0.5 - 0.5 * Math.cos(2 * Math.PI * 5 * p + 1.7));   // 5 cycles, decorrelated
+    out[i] = roarLP(roarHP(rnd())) * roarMod * 1.3 + hissLP(hissHP(rnd())) * hissMod * 0.5;
+  }
+  // Dense fine drops (a patter, blending into the wash) + sparse closer, heavier drops.
+  for (const ev of poissonEvents(n, 260)) addSplat(out, ev, 1500 + Math.random() * 4000, 0.003 + Math.random() * 0.005, 0.05 + Math.random() * 0.10);
+  for (const ev of poissonEvents(n, 7)) addSplat(out, ev, 500 + Math.random() * 1200, 0.012 + Math.random() * 0.02, 0.16 + Math.random() * 0.18);
   return out;
 }
 function ocean(n, loopN) { // three whole-cycle swells (seamless) + asymmetric crest wash (§4)
@@ -174,8 +180,8 @@ function fire(n) { // lapping bed (soft-clipped) + Poisson crackle + breathing h
     hissEnv += (breath - hissEnv) * 0.0002;
     out[i] = bed + hissHP(rnd()) * hissEnv * 0.14;
   }
-  for (const ev of poissonEvents(n, 32)) // crackle: short band-passed pops, amplitude jittered
-    addGrain(out, ev, 1500 + Math.random() * 700, 0.012 + Math.random() * 0.012, 0.08 + Math.random() * 0.32, 0.002);
+  for (const ev of poissonEvents(n, 32)) // crackle: short broadband pops, amplitude jittered
+    addSplat(out, ev, 1200 + Math.random() * 1400, 0.005 + Math.random() * 0.012, 0.08 + Math.random() * 0.32);
   return out;
 }
 function fan(n, loopN) { // low-passed motor rumble + faint blade-pass tone + comb slap (§4)
