@@ -14,6 +14,7 @@
 // Usage: node pipeline/bake.js  [--seconds=30] [--crossfade=1.0]
 
 import { mkdir, writeFile } from 'node:fs/promises';
+import { existsSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateIcons } from './icon.js';
@@ -329,8 +330,16 @@ async function main() {
     await writeFile(path.join(OUT_DIR, file), wav);
     const entry = { id: k.id, label: k.label, files: [file], durationSec: LOOP_SEC };
     if (k.kind) entry.kind = k.kind;
+    // Overlay a human-cleared real recording if one was fetched (npm run fetch:real) — it replaces the
+    // synthesized loop for that id where recordings beat synthesis (ocean/fire/wind). Downloaded audio
+    // is gitignored; on a clean checkout without it, the synth loop above stands.
+    const realPath = path.join(OUT_DIR, 'real', file);
+    let real = false;
+    if (existsSync(realPath)) { copyFileSync(realPath, path.join(OUT_DIR, file)); entry.source = 'recording'; real = true; }
     soundscapes.push(entry);
-    console.log(`[bake] ${file.padEnd(14)} ${lufs.toFixed(1)} LUFS  peak ${peak.toFixed(2)}  (${LOOP_SEC}s, ${(wav.length / 1024 / 1024).toFixed(1)} MB)`);
+    console.log(real
+      ? `[bake] ${file.padEnd(14)} real recording (overlaid)`
+      : `[bake] ${file.padEnd(14)} ${lufs.toFixed(1)} LUFS  peak ${peak.toFixed(2)}  (${LOOP_SEC}s, ${(wav.length / 1024 / 1024).toFixed(1)} MB)`);
   }
 
   await writeFile(
