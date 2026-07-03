@@ -65,16 +65,16 @@ code{font-family:var(--mono);font-size:.9em;background:rgba(90,162,255,.12);colo
     <div class="eyebrow">Web tech · no native app · works down to iOS 12</div>
     <div class="mark">mesh-playback</div>
     <h1>Old iPhones and iPads, turned into nursery speakers you run from <span class="accent">your phone</span>.</h1>
-    <p class="lede">White noise, procedural ambient loops, a sleep timer, and a baby monitor — controlled from the parent's phone, with a loud alarm the moment a room stops sounding when it shouldn't.</p>
+    <p class="lede">White noise, real ambient recordings (rain, ocean, fire, wind) plus procedural loops, a sleep timer that winds down on its own, and a baby monitor — controlled from the parent's phone, with a loud alarm the moment a room stops sounding when it shouldn't.</p>
     <div class="cta"><a class="btn primary" href="#try">Try it live ↓</a><a class="btn ghost" href="https://github.com/lifeart/mesh-playback">Source on GitHub</a></div>
-    <div class="specs"><span><b>108</b> tests green</span><span><b>10</b> built-in sounds</span><span><b>3</b> capability tiers</span><span><b>1</b> tiny hub · one dependency</span></div>
+    <div class="specs"><span><b>113</b> tests green</span><span><b>10</b> loudness-matched sounds</span><span><b>3</b> capability tiers</span><span>installable <b>PWA</b> · one-dependency hub</span></div>
   </header>
 
   <section>
     <div class="elabel">The remote — your phone</div>
     <h2>One tap runs every room. Or the phone is the speaker itself.</h2>
     <div class="grid">
-      <div class="shot reveal"><div class="device"><img alt="Controller now-playing hero, sound library and sleep timer" src="shots/controller-top-light.png"></div><p class="cap"><b>Play right here.</b> The app is its own speaker — pick a sound, set a timer, no second device needed.</p></div>
+      <div class="shot reveal"><div class="device"><img alt="Controller: one-tap bedtime, rooms, sound library and sleep timer" src="shots/controller-top-light.png"></div><p class="cap"><b>Bedtime, then the rooms.</b> One tap starts every room with a 45-min wind-down timer already set; each room picks from 10 loudness-matched sounds.</p></div>
       <div class="shot reveal"><div class="device"><img alt="A room card in dark mode with the loudness meter" src="shots/controller-room-dark.png"></div><p class="cap"><b>Every room, at a glance.</b> Start · stop · volume · timer · sound, plus a live &ldquo;room sound&rdquo; meter from the baby monitor.</p></div>
     </div>
   </section>
@@ -95,7 +95,7 @@ code{font-family:var(--mono);font-size:.9em;background:rgba(90,162,255,.12);colo
       <div class="pane"><div class="phead">🔊 Speaker <span>— the old iPad · arm it once</span></div><iframe src="player/" title="Speaker PWA" allow="autoplay"></iframe></div>
       <div class="pane"><div class="phead">🎛 Controller <span>— your phone</span></div><iframe src="controller/" title="Controller PWA" allow="autoplay"></iframe></div>
     </div>
-    <p class="livenote">A leader-elected in-browser hub runs the real protocol over <code>BroadcastChannel</code>, so these unmodified apps genuinely talk to each other with nothing installed. <a href="live/">Open full-screen ↗</a></p>
+    <p class="livenote">A leader-elected in-browser hub runs the real protocol over <code>BroadcastChannel</code>, so these unmodified apps genuinely talk to each other with nothing installed. <a href="live/">Open full-screen ↗</a> · or watch the same apps run <b>peer-to-peer over a real WebRTC data channel</b>: <a href="rtc/">the WebRTC prototype ↗</a>. Each app also installs to your home screen as a standalone PWA.</p>
   </section>
 
   <footer>
