@@ -20,12 +20,19 @@ const assetUrl = (rel) => new URL(rel, SITE_ROOT).href;
 // ---- a bus that reaches every same-origin context (BroadcastChannel) AND this one (local) ----
 // BroadcastChannel never echoes to the sender, so local dispatch covers the leader talking to a
 // client that lives in the same context (e.g. the leader iframe's own player).
-const bc = 'BroadcastChannel' in self ? new BroadcastChannel('mp-demo-bus') : null;
-const localSinks = new Set();
-const bus = {
-  post(m) { if (bc) bc.postMessage(m); for (const fn of localSinks) queueMicrotask(() => fn(m)); },
-  onAny(fn) { localSinks.add(fn); if (bc) bc.addEventListener('message', (e) => fn(e.data)); },
-};
+function makeBroadcastBus() {
+  const bc = 'BroadcastChannel' in self ? new BroadcastChannel('mp-demo-bus') : null;
+  const localSinks = new Set();
+  return {
+    post(m) { if (bc) bc.postMessage(m); for (const fn of localSinks) queueMicrotask(() => fn(m)); },
+    onAny(fn) { localSinks.add(fn); if (bc) bc.addEventListener('message', (e) => fn(e.data)); },
+  };
+}
+// The transport is a pluggable {post, onAny} seam. demo/rtc-hub.js installs a WebRTC bus on
+// self.__MP_BUS__ (loaded BEFORE this module, so no import race), and the SAME hub + unmodified apps
+// then run peer-to-peer over an RTCDataChannel instead of BroadcastChannel — the /rtc/ demo. When it's
+// the host it calls bus.setHost() (below) so the WebRTC bus knows to accept peers. (docs/DEPLOY.md)
+const bus = self.__MP_BUS__ || makeBroadcastBus();
 
 // ---- fake WebSocket: the app thinks it's talking to /ws; it's talking to the in-browser hub ----
 const RealWebSocket = self.WebSocket;
@@ -320,11 +327,12 @@ bus.onAny((m) => {
 // lifetime of the context; if the leader tab closes, another acquires it and takes over (device
 // registry survives in localStorage).
 let miniHub = null;
+const becomeHub = () => { miniHub = new MiniHub(); if (bus.setHost) bus.setHost(); }; // tell a WebRTC bus it's the peer host
 if ('locks' in navigator && navigator.locks && navigator.locks.request) {
-  navigator.locks.request('mp-demo-hub', { mode: 'exclusive' }, () => new Promise(() => { miniHub = new MiniHub(); }));
+  navigator.locks.request('mp-demo-hub', { mode: 'exclusive' }, () => new Promise(() => becomeHub()));
 } else {
   // No Web Locks (very old browser): fall back to a single in-context hub so a standalone tab still works.
-  miniHub = new MiniHub();
+  becomeHub();
 }
 
 // A small, dismissable banner so a standalone Player/Controller tab makes clear it's the demo.

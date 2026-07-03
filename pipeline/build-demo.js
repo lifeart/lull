@@ -30,6 +30,7 @@ cpSync(R('web'), OUT, { recursive: true });            // player/, controller/, 
 cpSync(R('shared'), O('shared'), { recursive: true }); // /shared/*.js the app imports
 mkdirSync(O('demo'), { recursive: true });
 cpSync(R('demo', 'mock-hub.js'), O('demo', 'mock-hub.js'));
+cpSync(R('demo', 'rtc-hub.js'), O('demo', 'rtc-hub.js')); // WebRTC transport (inert unless ?rtc)
 
 // 3) Landing = the showcase intro (screenshots + an embedded live demo); the full-screen
 //    Player+Controller demo lives at /live/. Screenshots are served from /shots/.
@@ -37,6 +38,8 @@ cpSync(R('demo', 'shots'), O('shots'), { recursive: true });
 cpSync(R('demo', 'intro.html'), O('index.html'));
 mkdirSync(O('live'), { recursive: true });
 cpSync(R('demo', 'index.html'), O('live', 'index.html'));
+mkdirSync(O('rtc'), { recursive: true }); // WebRTC-transport prototype (loads the apps with ?rtc)
+cpSync(R('demo', 'rtc.html'), O('rtc', 'index.html'));
 
 // 4) Patch the two app shells + their JS so they run under a subpath with the mock, no SW.
 const edit = (file, fn) => { writeFileSync(file, fn(readFileSync(file, 'utf8'))); };
@@ -44,9 +47,10 @@ const edit = (file, fn) => { writeFileSync(file, fn(readFileSync(file, 'utf8')))
 // Absolute /-rooted asset refs → page-relative (all app files live one dir below the site root).
 const toRelative = (s) => s.replace(/(["'(=])\/(shared\/|app\.css|icon-\d+\.png|player\/assets\/)/g, '$1../$2');
 // The mock must patch WebSocket/fetch before the app module runs → inject it first.
+// rtc-hub must load BEFORE mock-hub (it may install the WebRTC bus on self.__MP_BUS__ that mock-hub reads).
 const injectMock = (html, appSrc) =>
   html.replace(`<script type="module" src="${appSrc}"></script>`,
-    `<script type="module" src="../demo/mock-hub.js"></script>\n  <script type="module" src="${appSrc}"></script>`);
+    `<script type="module" src="../demo/rtc-hub.js"></script>\n  <script type="module" src="../demo/mock-hub.js"></script>\n  <script type="module" src="${appSrc}"></script>`);
 // The demo has no server to serve the SW's cached shell paths → don't register it.
 const disableSw = (s) => s.replace(/navigator\.serviceWorker\.register\('sw\.js'\)/g, 'Promise.resolve()');
 

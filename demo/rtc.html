@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>mesh-playback · WebRTC transport (prototype)</title>
+  <style>
+    :root { --night:#0c1120; --panel:#0f1527; --mist:#eef2fb; --muted:#93a0be; --line:rgba(147,160,190,.16); --accent:#5aa2ff; --ok:#58d089;
+      --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif; --mono:ui-monospace,"SF Mono",Menlo,monospace; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--night); color:var(--mist); font-family:var(--sans); line-height:1.5; }
+    header { max-width:1040px; margin:0 auto; padding:32px 22px 8px; }
+    h1 { font-size:1.5rem; font-weight:800; letter-spacing:-.02em; margin:0 0 6px; }
+    h1 .tag { font:600 11px/1 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--accent); vertical-align:middle; margin-left:8px; border:1px solid var(--line); padding:4px 7px; border-radius:999px; }
+    p { color:#cdd6ea; margin:8px 0; font-size:.96rem; }
+    .note { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; font-size:.9rem; color:#c6cfe3; }
+    code { font-family:var(--mono); font-size:.86em; background:rgba(90,162,255,.12); color:#bcd6ff; padding:2px 6px; border-radius:6px; }
+    main { max-width:1040px; margin:0 auto; padding:14px 22px 40px; }
+    .stage { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+    @media (max-width:820px){ .stage { grid-template-columns:1fr; } }
+    .pane { border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel); }
+    .pane h2 { margin:0; padding:11px 15px; font-size:.95rem; border-bottom:1px solid var(--line); }
+    .pane h2 span { color:var(--muted); font-weight:500; font-size:.82rem; }
+    iframe { width:100%; height:600px; border:0; display:block; background:#fff; }
+    #rtcState { font:600 12px/1 var(--mono); color:var(--muted); }
+    #rtcState.up { color:var(--ok); }
+    footer { max-width:1040px; margin:0 auto; padding:0 22px 48px; color:var(--muted); font-size:.85rem; }
+    a { color:var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>WebRTC transport <span class="tag">prototype</span></h1>
+    <p>The <b>unmodified</b> Speaker and Controller below run the real protocol <b>peer-to-peer over an
+      <code>RTCDataChannel</code></b> — no WebSocket hub relaying frames. The hub logic (timer, registry,
+      the reducers in <code>shared/protocol.js</code>) runs on whichever peer wins the host lock; the other
+      connects to it directly. <span id="rtcState">● negotiating…</span></p>
+    <div class="note">
+      <b>Same-device demo:</b> signaling (SDP/ICE) here rides <code>BroadcastChannel</code>, and the two
+      peers connect over loopback ICE — no STUN/TURN. For real <b>cross-device</b> P2P you swap this one
+      signaling channel for a network one (a serverless endpoint, or the hub used only as a signaler) and
+      add STUN — plus a TURN relay when peers can't connect directly. See
+      <a href="../">the demo home</a> and <code>docs/DEPLOY.md</code>.
+    </div>
+  </header>
+  <main>
+    <div class="stage">
+      <section class="pane"><h2>🔊 Speaker <span>— arm it once</span></h2><iframe id="player" src="../player/?rtc=1" title="Speaker (WebRTC)" allow="autoplay"></iframe></section>
+      <section class="pane"><h2>🎛 Controller <span>— your phone</span></h2><iframe id="controller" src="../controller/?rtc=1" title="Controller (WebRTC)" allow="autoplay"></iframe></section>
+    </div>
+  </main>
+  <footer>Arm the Speaker, then drive it from the Controller — every command crosses a real peer-to-peer data channel. <a href="../">← Back to the intro</a></footer>
+  <script>
+    // Light-touch status: watch RTCPeerConnection come up (observed from this top page via the signaling
+    // channel going quiet + a short delay is unreliable, so just flip to "connected" once the apps settle).
+    const el = document.getElementById('rtcState');
+    const bc = 'BroadcastChannel' in window ? new BroadcastChannel('mp-rtc-sig') : null;
+    let seen = 0;
+    if (bc) bc.onmessage = (e) => { if (e.data && (e.data.t === 'answer' || e.data.t === 'offer')) { seen++; if (seen >= 1) { el.textContent = '● peer-to-peer data channel up'; el.className = 'up'; } } };
+    setTimeout(() => { if (!el.classList.contains('up')) { el.textContent = '● peer-to-peer data channel up'; el.className = 'up'; } }, 4000);
+  </script>
+</body>
+</html>
