@@ -184,10 +184,12 @@ comprehensive node + Playwright tests.
   boots to a big "Tap to arm <name>"; **P9** advisory pre-arm hardening checklist (N/6); **P4** "＋ Add a
   room" prefill link (`/player/?name=…#t=…`) → zero typing on the device. (P6 = the ambient library
   below; P7 volume-presets skipped as marginal.)
-- **Expanded sound library:** 7 **synthesized** ambient loops — rain, ocean, wind, fireplace, fan, womb,
-  heartbeat — generated procedurally in `pipeline/bake.js` (zero-dep, no license, offline), tagged
-  `kind:'ambient'`. Optional real-recording **download** path (`npm run fetch:ambient`) is scaffolded and,
-  for personal use, license-relaxed; see §9.
+- **Sound library (10, loudness-matched):** white/pink/brown + rain, ocean, wind, fireplace, fan, womb,
+  heartbeat. Ambient textures are synthesized in `pipeline/bake.js` (zero-dep, no license, offline) with
+  proper DSP (biquads/SVF, Poisson-scheduled grains, modal/soft-clip layers), all normalized to **−16 LUFS
+  (ITU-R BS.1770)** so switching never jumps in volume. **`npm run fetch:real`** overlays **real CC0/PD
+  field recordings** for rain/ocean/fire/wind (downloaded audio gitignored; synthesis is the fallback;
+  bake re-applies the overlay). **Pink is the default sound; a ~45-min wind-down sleep timer is default-ON.**
 - **Baby monitor — "cry meter" (M8a):** opt-in on the speaker (from the arm gesture), a Web Audio
   AnalyserNode on the mic reports a 0..1 room-loudness `micLevel` over the existing report path; the
   controller shows a live meter and a "👶 possible crying" alarm on a sustained spike (auto-clears on
@@ -206,9 +208,10 @@ comprehensive node + Playwright tests.
   real behavior per [`RESEARCH-BABY-MONITOR.md`](RESEARCH-BABY-MONITOR.md) §M8-S0 before relying on it,
   and tune the CRY_ON/CRY_OFF thresholds + level normalization to a real room. M8b/c (attended WebRTC
   listen/talk, video peek) remain future.
-- **Optional real-recording ambient pack** — the synthesized loops already ship; if you want field
-  recordings, `npm run fetch:ambient` is scaffolded (fill `url`/`sha256`, set `"cleared": true`, needs
-  ffmpeg; license-relaxed for personal use). Rules in [`RESEARCH-AMBIENT-SOUNDS.md`](RESEARCH-AMBIENT-SOUNDS.md).
+- **Real-recording ambient pack — DONE** (`npm run fetch:real`): human-verified CC0/PD recordings for
+  rain/ocean/fire/wind, ffmpeg-looped + loudness-matched to −16 LUFS, overlaid on the synth fallback
+  (downloaded audio gitignored). The older `fetch:ambient` scaffold + `RESEARCH-AMBIENT-SOUNDS.md` remain
+  for adding more.
 - **P3 ambient health / auto pre-flight** — the next nightly-tap win (P1+P2 shipped): auto-run the probe
   on reconnect + a persistent "all rooms verified Ns ago" line (mind the alarm-priming caveat).
 - **Baby-monitor (radio-nanny) mode** — mic loudness "cry meter" (ships first) → attended WebRTC
