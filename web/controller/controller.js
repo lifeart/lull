@@ -338,7 +338,7 @@ async function loadSoundscapes() {
     if (res.ok) {
       const m = await res.json();
       if (Array.isArray(m.soundscapes) && m.soundscapes.length) {
-        soundscapes = m.soundscapes.map((s) => ({ id: s.id, label: s.label || s.id, kind: s.kind || 'noise' }));
+        soundscapes = m.soundscapes.map((s) => ({ id: s.id, label: s.label || s.id, kind: s.kind || 'noise', fav: !!s.fav }));
       }
     }
   } catch (e) { console.warn('library load failed', e); }
@@ -359,9 +359,16 @@ function renderUploadList() {
 function libraryRow(s) {
   const row = document.createElement('div'); row.className = 'uprow'; row.dataset.id = s.id;
   const handle = document.createElement('span'); handle.className = 'handle'; handle.textContent = '⠿'; handle.setAttribute('aria-label', 'Drag to reorder');
+  // Favorite toggle — hub-synced; favorites are pinned to the top of the library server-side.
+  const star = document.createElement('button');
+  star.className = 'fav' + (s.fav ? ' on' : '');
+  star.textContent = s.fav ? '★' : '☆';
+  star.setAttribute('aria-pressed', String(!!s.fav));
+  star.setAttribute('aria-label', s.fav ? `Unfavorite ${s.label}` : `Favorite ${s.label}`);
+  star.addEventListener('click', () => toggleFav(s));
   const name = document.createElement('span'); name.className = 'upname'; name.textContent = s.label;
   const sp = document.createElement('span'); sp.className = 'spacer';
-  row.append(handle, name, sp);
+  row.append(handle, star, name, sp);
   // Keyboard/VoiceOver-accessible reorder alternative to the pointer drag (which touch-only users
   // and screen readers can't operate). (finding #20)
   const up = linkBtn('▲', () => moveRow(s.id, -1)); up.setAttribute('aria-label', `Move ${s.label} up`);
@@ -412,6 +419,13 @@ async function commitOrder(ids) {
   const ok = await apiPost(`/api/library/order?ids=${encodeURIComponent(unique.join(','))}`);
   if (!ok) refreshLibrary(); // failed → resync the DOM to the server's order
   // success → hub broadcasts MSG.LIBRARY → refreshLibrary()
+}
+
+// Toggle a favorite. Optimism is unnecessary: the hub broadcasts MSG.LIBRARY on success →
+// refreshLibrary() rebuilds with the new star + favorites-first order; on failure we resync.
+async function toggleFav(s) {
+  const ok = await apiPost(`/api/library/fav?id=${encodeURIComponent(s.id)}&on=${s.fav ? '0' : '1'}`);
+  if (!ok) refreshLibrary();
 }
 
 // Swap a library entry with its neighbour and persist — the keyboard/VoiceOver reorder path.

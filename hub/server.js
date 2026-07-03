@@ -87,12 +87,24 @@ function libraryJson() {
   const out = [];
   try {
     const m = JSON.parse(readFileSync(path.join(WEB_DIR, 'player', 'assets', 'manifest.json'), 'utf8'));
-    for (const s of m.soundscapes) out.push({ id: s.id, label: s.label, url: `/player/assets/${s.files[0]}`, kind: 'noise' });
+    for (const s of m.soundscapes) out.push({ id: s.id, label: s.label, url: `/player/assets/${s.files[0]}`, kind: s.kind || 'noise' });
   } catch (err) { console.warn('[hub] manifest read failed:', err.message); }
+  // Downloaded ambient loops (optional; produced by `npm run fetch:ambient`). Kept in a SEPARATE
+  // manifest so `npm run bake` — which overwrites manifest.json — never clobbers them. Absent = not
+  // installed (the common case, silent); a corrupt file warns.
+  try {
+    const a = JSON.parse(readFileSync(path.join(WEB_DIR, 'player', 'assets', 'ambient', 'ambient.json'), 'utf8'));
+    for (const s of a.soundscapes) out.push({ id: s.id, label: s.label, url: `/player/assets/ambient/${s.files[0]}`, kind: 'ambient' });
+  } catch (err) { if (err.code !== 'ENOENT') console.warn('[hub] ambient manifest read failed:', err.message); }
   out.push(...uploads.list());
-  // Apply the saved display order (stable: ordered ids first, unknown ids keep original order).
+  // Mark favorites, then sort: favorites pinned first, then the saved display order (stable).
+  const favSet = new Set(uploads.getFavs());
+  for (const s of out) s.fav = favSet.has(s.id);
   const rank = new Map(uploads.getOrder().map((id, i) => [id, i]));
-  out.sort((a, b) => (rank.has(a.id) ? rank.get(a.id) : Infinity) - (rank.has(b.id) ? rank.get(b.id) : Infinity));
+  out.sort((a, b) => {
+    if (a.fav !== b.fav) return a.fav ? -1 : 1;
+    return (rank.has(a.id) ? rank.get(a.id) : Infinity) - (rank.has(b.id) ? rank.get(b.id) : Infinity);
+  });
   return { soundscapes: out };
 }
 
@@ -107,6 +119,19 @@ async function handleOrder(req, res) {
   if (!authApi(req, res)) return;
   const ids = (new URL(req.url, 'http://x').searchParams.get('ids') || '').split(',').filter(Boolean);
   await uploads.setOrder(ids);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true }));
+  hub.broadcastLibrary();
+}
+
+// Toggle a soundscape's favorite flag (hub-synced; ?id=<soundscapeId>&on=0|1). Mirrors handleOrder:
+// same auth gate, same MSG.LIBRARY broadcast → every client refetches /api/library. (research: favorites)
+async function handleFav(req, res) {
+  if (!authApi(req, res)) return;
+  const q = new URL(req.url, 'http://x').searchParams;
+  const id = q.get('id');
+  if (!id) { res.writeHead(400).end('missing id'); return; }
+  await uploads.setFav(id, q.get('on') !== '0');
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ ok: true }));
   hub.broadcastLibrary();
@@ -204,6 +229,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (p === '/api/library/order' && req.method === 'POST') { await handleOrder(req, res); return; }
+    if (p === '/api/library/fav' && req.method === 'POST') { await handleFav(req, res); return; }
     if (p === '/api/upload/rename' && req.method === 'POST') { await handleRename(req, res); return; }
     if (p === '/api/upload/delete' && req.method === 'POST') { await handleDelete(req, res); return; }
     if (p === '/api/device/forget' && req.method === 'POST') { await handleForget(req, res); return; }

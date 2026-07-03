@@ -114,6 +114,31 @@ test('uploads: isFull gate + streamed temp-file commit round-trips', async () =>
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('uploads: favorites are a hub-synced flag on any id, persisted, and dropped on delete', async () => {
+  const dir = tmp('mp-fav');
+  const up = new Uploads(dir);
+  assert.deepEqual(up.getFavs(), []);
+  await up.setFav('white', true);   // a baked-noise id we don't otherwise track
+  await up.setFav('pink', true);
+  await up.setFav('white', true);   // idempotent add
+  assert.deepEqual(up.getFavs().sort(), ['pink', 'white']);
+  await up.setFav('white', false);
+  assert.deepEqual(up.getFavs(), ['pink']);
+  // Persisted across a reload.
+  await up.flush();
+  const up2 = new Uploads(dir);
+  assert.deepEqual(up2.getFavs(), ['pink']);
+  // Deleting an uploaded track removes it from favs too.
+  const t = await up2.reserveTempPath(Date.now());
+  await fs.writeFile(t, Buffer.from('x'));
+  const item = await up2.commitTemp({ label: 'Track', ext: 'mp3', tmpPath: t, nowMs: Date.now() });
+  await up2.setFav(item.id, true);
+  assert.ok(up2.getFavs().includes(item.id));
+  await up2.remove(item.id);
+  assert.ok(!up2.getFavs().includes(item.id), 'favs must not linger for a deleted upload');
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('uploads: commitTemp rejects a disallowed extension and cleans up the temp file', async () => {
   const dir = tmp('mp-up2');
   const up = new Uploads(dir);

@@ -18,6 +18,7 @@ export class Uploads {
     this.dir = dir;
     this.index = [];
     this.order = []; // display order of ALL soundscape ids (baked + uploads); missing ids sort last
+    this.favs = []; // favorited soundscape ids (ALL kinds: baked + ambient + uploads) — hub-synced
     this._writing = Promise.resolve();
     this._load();
   }
@@ -29,6 +30,7 @@ export class Uploads {
       const raw = JSON.parse(readFileSync(f, 'utf8'));
       this.index = raw.items || [];
       this.order = raw.order || [];
+      this.favs = raw.favs || [];
     } catch (err) { console.error('[uploads] index parse failed, starting empty:', err.message); }
   }
 
@@ -38,8 +40,18 @@ export class Uploads {
   getOrder() { return this.order.slice(); }
   async setOrder(ids) { this.order = [...new Set((ids || []).filter((x) => typeof x === 'string'))]; await this._persist(); }
 
+  // Favorites: a hub-synced flag on any soundscape id (same shared-preference class as `order`).
+  getFavs() { return this.favs.slice(); }
+  async setFav(id, on) {
+    id = String(id);
+    const s = new Set(this.favs);
+    if (on) s.add(id); else s.delete(id);
+    this.favs = [...s];
+    await this._persist();
+  }
+
   async _persist() {
-    const snapshot = JSON.stringify({ items: this.index, order: this.order }, null, 2);
+    const snapshot = JSON.stringify({ items: this.index, order: this.order, favs: this.favs }, null, 2);
     this._writing = this._writing.catch(() => {}).then(async () => {
       try {
         await fs.mkdir(this.dir, { recursive: true });
@@ -106,6 +118,7 @@ export class Uploads {
     if (i === -1) return false;
     const [item] = this.index.splice(i, 1);
     this.order = this.order.filter((x) => x !== id); // don't let deleted ids linger in the order
+    this.favs = this.favs.filter((x) => x !== id); // ...nor in favorites
     try { await fs.unlink(path.join(this.dir, item.file)); }
     catch (err) { console.error('[uploads] unlink failed:', err.message); }
     await this._persist();

@@ -248,6 +248,29 @@ test('drag-to-reorder sounds updates the chip order on device cards', async ({ b
   await ctx.close();
 });
 
+test('favorite a sound: the star pins it to the top of the library and the card chips', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'NurseryFav');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const card = c.locator('.card', { hasText: 'NurseryFav' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  const list = c.locator('#uploadList');
+  const pinkStar = () => list.locator('.uprow', { hasText: 'Pink noise' }).locator('.fav');
+  await expect(pinkStar()).toBeVisible({ timeout: 10000 });
+
+  await pinkStar().click(); // favorite Pink noise
+  await expect(list.locator('.uprow .upname').nth(0)).toHaveText('Pink noise', { timeout: 10000 });
+  await expect(card.locator('.sound .chips .chip').nth(0)).toHaveText('Pink noise', { timeout: 10000 });
+  await expect(pinkStar()).toHaveText('★');
+
+  await pinkStar().click(); // un-favorite → the pin is released
+  await expect(pinkStar()).toHaveText('☆', { timeout: 10000 });
+  await ctx.close();
+});
+
 test('inline ＋ chip opens the picker and adds a sound to the card', async ({ browser }) => {
   const ctx = await browser.newContext();
   const player = await ctx.newPage();

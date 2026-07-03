@@ -45,6 +45,22 @@ test('mutating /api routes reject a disallowed Origin (CSRF); health reports con
     assert.equal(health.persistHealthy, true);
     for (const k of ['total', 'online', 'offline']) assert.equal(typeof health[k], 'number', `health.${k} present`);
     assert.equal(health.online, 0);
+
+    // Favorites: Origin-gated, reflected in /api/library, and pinned to the top.
+    const favEvil = await fetch(`${base}/api/library/fav?id=pink&on=1`, { method: 'POST', headers: { Origin: 'http://evil.example' } });
+    assert.equal(favEvil.status, 403, 'fav toggle is Origin-gated');
+    const favOk = await fetch(`${base}/api/library/fav?id=pink&on=1`, { method: 'POST' });
+    assert.equal(favOk.status, 200);
+    const lib = await (await fetch(`${base}/api/library`)).json();
+    const pink = lib.soundscapes.find((s) => s.id === 'pink');
+    assert.ok(pink && pink.fav === true, 'favorited id carries fav:true');
+    assert.equal(lib.soundscapes[0].id, 'pink', 'favorite is pinned first');
+    // Un-favoriting clears the flag.
+    await fetch(`${base}/api/library/fav?id=pink&on=0`, { method: 'POST' });
+    const lib2 = await (await fetch(`${base}/api/library`)).json();
+    assert.equal(lib2.soundscapes.find((s) => s.id === 'pink').fav, false);
+    // Missing id → 400.
+    assert.equal((await fetch(`${base}/api/library/fav?on=1`, { method: 'POST' })).status, 400);
   } finally {
     mod.server.close();
     mod.hub.stop();
