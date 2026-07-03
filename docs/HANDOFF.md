@@ -99,7 +99,9 @@ deploy/              Dockerfile (non-root via su-exec entrypoint + HEALTHCHECK),
                      (hub + Caddy), docker-compose.synology.yml (hub-only for a NAS), Caddyfile,
                      entrypoint.sh, dnsmasq, install.sh
 docs/                DESIGN.md, HANDOFF.md (this), HARDENING.md, RECOVERY-CARD.md, OVERNIGHT-TEST.md,
-                     DEPLOY-SYNOLOGY.md (NAS: plain-HTTP vs DSM-HTTPS, and the TLS trade-offs)
+                     DEPLOY-SYNOLOGY.md (NAS: plain-HTTP vs DSM-HTTPS, TLS trade-offs),
+                     RESEARCH-AMBIENT-SOUNDS.md (licensed sound sourcing + auto-download + favorites),
+                     RESEARCH-BABY-MONITOR.md (radio-nanny / mic-monitor feasibility, M8)
 demo/                mock-hub.js (in-browser hub) + index.html; built by pipeline/build-demo.js →
                      _site/, deployed by .github/workflows/pages.yml
 ```
@@ -173,6 +175,13 @@ deploy; comprehensive node + Playwright tests.
 - **Real-device overnight test** (the make-or-break unknown) — set the true tier boundaries. The
   container deploy path itself is now verified (build/boot/serve/persist/shutdown); what remains
   unproven is on-device background/lock behavior over a real night.
+- **Expand the sound library** — CC0/PD ambient loops (rain/ocean/forest/fireplace/stream/wind) +
+  favorites. Full sourcing/licensing research + a concrete auto-download-once and hub-synced-favorites
+  design is in [`RESEARCH-AMBIENT-SOUNDS.md`](RESEARCH-AMBIENT-SOUNDS.md) (favorites reuse `MSG.LIBRARY`;
+  no protocol change).
+- **Baby-monitor (radio-nanny) mode** — mic loudness "cry meter" (ships first) → attended WebRTC
+  listen/talk → video peek. Feasibility + the hard iOS limits (screen-on only, never on a locked device)
+  in [`RESEARCH-BABY-MONITOR.md`](RESEARCH-BABY-MONITOR.md) (maps to M8).
 - **HLS delivery** (send any/long/live audio, same background-safe media path) — DESIGN §12, milestone M7.
 - **WebRTC** live "talk to / listen into the room" (attended) — DESIGN §12, M8.
 - Optional polish: install wizard (QR + test-tone calibration), Web Push liveness to the controller,
