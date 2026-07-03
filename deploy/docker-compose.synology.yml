@@ -1,7 +1,8 @@
 # Hub-only compose for a Synology NAS (Container Manager) — NO bundled Caddy.
-# On Synology you have two easy paths for the required secure context; see docs/DEPLOY-SYNOLOGY.md:
+# Paths for the required secure context (see docs/DEPLOY-SYNOLOGY.md for the full trade-offs):
 #   • Plain HTTP on the LAN (simplest)         → the "always-audible, hardware-set-volume" model
-#   • DSM Reverse Proxy + Let's Encrypt (recommended, full features incl. remote volume / over-mute)
+#   • DSM Reverse Proxy + Let's Encrypt        → LAN-local TLS, full features, survives WAN outage
+#   • Cloudflare Tunnel (cloudflared below)    → trusted TLS, no port-forward, iOS 12–14, remote access
 #
 # Container Manager → Project → Create → upload this file (put the repo on the NAS so `build:` works,
 # or pre-build the image and replace `build:` with `image: mesh-playback-hub:latest`).
@@ -34,3 +35,18 @@ services:
       # volume ownership doesn't matter. Create the folder first (e.g. /docker/mesh-playback).
       - /volume1/docker/mesh-playback/data:/data
     restart: unless-stopped
+
+  # --- OPTIONAL: Cloudflare Tunnel for trusted TLS with no port-forwarding (Option C in the guide) ---
+  # 1. Zero Trust dashboard → Networks → Tunnels → Create tunnel → Docker → copy the token.
+  # 2. Put it in your .env as CF_TUNNEL_TOKEN and uncomment this service.
+  # 3. In the tunnel's Public Hostname page, point your hostname → http://hub:8080 (this Docker network).
+  # 4. Set MP_ORIGIN=https://<your-tunnel-hostname> on the hub above, and keep MP_TOKEN set.
+  # With a pure tunnel you can also remove the hub's `ports:` mapping — nothing needs to be exposed.
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: mesh-playback-cloudflared
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
+  #   depends_on: [hub]
+  #   restart: unless-stopped
