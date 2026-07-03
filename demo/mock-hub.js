@@ -88,7 +88,7 @@ async function bakedSoundscapes() {
   try {
     const m = await fetchReal(assetUrl('player/assets/manifest.json'));
     const j = await m.json();
-    bakedCache = j.soundscapes.map((s) => ({ id: s.id, label: s.label, url: assetUrl(`player/assets/${s.files[0]}`), kind: 'noise' }));
+    bakedCache = j.soundscapes.map((s) => ({ id: s.id, label: s.label, url: assetUrl(`player/assets/${s.files[0]}`), kind: s.kind || 'noise' }));
   } catch { bakedCache = [{ id: 'white', label: 'White noise', url: assetUrl('player/assets/white.wav'), kind: 'noise' }]; }
   return bakedCache;
 }
