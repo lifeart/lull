@@ -22,7 +22,8 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         // Let <audio>.play() resolve headlessly; a real click still provides the gesture.
-        launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] },
+        // Fake media = a headless mic (a tone) that auto-grants, so the baby-monitor path is testable.
+        launchOptions: { args: ['--autoplay-policy=no-user-gesture-required', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
       },
     },
   ],

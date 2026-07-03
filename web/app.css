@@ -325,6 +325,10 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 .checkrow input { width: 24px; height: 24px; flex: 0 0 auto; accent-color: var(--accent); }
 /* Add-a-room setup link (P4) */
 .addroom-link { display: block; width: 100%; word-break: break-all; font-size: 0.8125rem; background: var(--fill-1); border-radius: 10px; padding: 10px 12px; margin-top: var(--s2); }
+/* Baby-monitor loudness meter (M8a) — green fill that turns red at the "possible crying" threshold. */
+.meter { height: 12px; border-radius: 6px; background: var(--fill-1); overflow: hidden; }
+.meter-fill { display: block; height: 100%; width: 0%; background: var(--play-text); border-radius: 6px; transition: width 0.25s linear, background 0.25s ease; }
+.meter-fill.hot { background: var(--danger-text); }
 #localPlayer > .row:first-child strong { font-size: 1.1875rem; letter-spacing: -0.02em; }
 #localPlayer .local-play {
   min-height: 56px;

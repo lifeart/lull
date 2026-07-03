@@ -10,6 +10,7 @@ import {
 } from '/shared/protocol.js';
 import { detectCaps, tierFromCaps, lockSummary } from '/shared/tiers.js';
 import { AudioEngine } from './audio.js';
+import { Monitor } from './monitor.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -32,6 +33,7 @@ const tier = tierFromCaps(caps);
 caps.tier = tier;
 
 let engine = null;
+const monitor = new Monitor(); // baby-monitor "cry meter" (M8a) — opt-in, screen-on only
 let ws = null;
 let desired = defaultDesired();
 let soundscapeUrls = { white: '/player/assets/white.wav' };
@@ -161,6 +163,7 @@ function report() {
     remainingSec: remainingSec(desired, hubNow()),
     soundscape: engine.getSoundscape() || desired.soundscape, // report what's ACTUALLY playing
     tier,
+    micLevel: monitor.getLevel(), // baby-monitor room loudness (null when off → omitted)
   }));
 }
 
@@ -182,8 +185,11 @@ async function armFromGesture() {
     await engine.arm({ soundscapeId: 'white', url: urlFor('white'), gainLinear: desired.gainLinear });
     armed = true;
     hideOverlay();
+    // Re-open the baby monitor within this same arm gesture if it was on before. (M8a)
+    if (localStorage.getItem('mp.monitor') === '1') { await monitor.start(); }
     connect();
     render();
+    renderMonitor();
   } catch (e) {
     // Release the failed engine's AudioContext so repeated retry taps can't exhaust iOS's
     // ~4-AudioContext limit and permanently block arming.
@@ -247,6 +253,7 @@ function render() {
   const rem = remainingSec(desired, hubNow());
   $('timerLine').textContent = rem != null ? `Sleep timer: ${Math.floor(rem / 60)}:${String(rem % 60).padStart(2, '0')}` : '';
   $('capsLine').textContent = '🔒 ' + lockSummary(tier);
+  renderMonitor();
   if (st === STATES.REQUIRES_GESTURE) showOverlay('Tap anywhere to resume the sound');
 }
 
@@ -257,9 +264,30 @@ setInterval(async () => {
     await realize(); report();
   }
   render();
-  // Elapsed-time cadence (robust to interval drift / background throttling; never double-fires).
-  if (armed && Date.now() - lastReportAt >= 5000) report();
+  // Elapsed-time cadence — faster while monitoring so the loudness meter is responsive.
+  if (armed && Date.now() - lastReportAt >= (monitor.active ? 2000 : 5000)) report();
 }, 1000);
+
+// --- baby monitor (M8a): opt-in mic loudness telemetry, started from a gesture (screen-on only) ---
+async function toggleMonitor() {
+  if (monitor.active) { monitor.stop(); localStorage.setItem('mp.monitor', '0'); }
+  else {
+    const ok = await monitor.start(); // needs the tap's user-activation for iOS mic permission
+    localStorage.setItem('mp.monitor', ok ? '1' : '0');
+    if (!ok) { $('monitorNote').hidden = false; $('monitorNote').textContent = 'Microphone unavailable or blocked — baby monitor off.'; }
+  }
+  renderMonitor();
+  report();
+}
+function renderMonitor() {
+  const btn = $('monitorToggle'); if (!btn) return;
+  if (!monitor.supported()) { btn.hidden = true; return; }
+  btn.hidden = false;
+  btn.textContent = monitor.active ? '🎙 Baby monitor: on — tap to stop' : '🎙 Start baby monitor';
+  btn.classList.toggle('btn-primary', monitor.active);
+  btn.classList.toggle('btn-ghost', !monitor.active);
+  $('monitorNote').hidden = !monitor.active;
+}
 
 // --- pre-arm hardening checklist (advisory; persisted per device) (P9) ---
 const HARDEN = [
@@ -294,6 +322,7 @@ function buildHardening() {
   $('name').value = friendlyName;
   buildHardening();
   $('armBtn').addEventListener('click', armFromGesture);
+  $('monitorToggle').addEventListener('click', toggleMonitor);
   $('overlay').addEventListener('click', resumeFromGesture);
   $('overlay').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') resumeFromGesture(); });
   wireRecovery();
@@ -301,4 +330,5 @@ function buildHardening() {
     navigator.serviceWorker.register('sw.js').catch((e) => console.warn('sw reg failed', e));
   }
   render();
+  renderMonitor();
 })();

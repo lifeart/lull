@@ -228,8 +228,10 @@ export const makeCommand = ({ target, verb, gainLinear, endsAtEpochMs, durationM
 export const makeAck = ({ deviceId, cmdId, ok, error }) => ({
   t: MSG.ACK, deviceId, cmdId, ok: !!ok, error: error || null,
 });
-export const makeReport = ({ deviceId, state, gainLinear, remainingSec, soundscape, tier }) => ({
-  t: MSG.REPORT, deviceId, state, gainLinear, remainingSec, soundscape, tier,
-});
+export const makeReport = ({ deviceId, state, gainLinear, remainingSec, soundscape, tier, micLevel }) => {
+  const m = { t: MSG.REPORT, deviceId, state, gainLinear, remainingSec, soundscape, tier };
+  if (micLevel !== undefined && micLevel !== null) m.micLevel = micLevel; // 0..1 room loudness (baby monitor, M8a)
+  return m;
+};
 export const makeDevices = ({ devices }) => ({ t: MSG.DEVICES, devices });
 export const makeProbe = ({ target, cmdId }) => ({ t: MSG.PROBE, target, cmdId: cmdId || newId('probe') });

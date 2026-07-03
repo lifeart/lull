@@ -214,7 +214,7 @@ class MiniHub {
   _onReport(connId, msg) {
     const meta = this.conns.get(connId); if (!meta || meta.role !== 'player') return;
     const d = this.registry[meta.deviceId]; if (!d) return;
-    d.reported = { state: msg.state, gainLinear: msg.gainLinear, remainingSec: msg.remainingSec, soundscape: msg.soundscape, tier: msg.tier };
+    d.reported = { state: msg.state, gainLinear: msg.gainLinear, remainingSec: msg.remainingSec, soundscape: msg.soundscape, tier: msg.tier, micLevel: msg.micLevel };
     d.lastSeenEpochMs = Date.now();
     this._persist();
     this._broadcastDevices();

@@ -334,6 +334,26 @@ test('forget: an offline (ghost) device can be removed from the controller (find
   await ctx.close();
 });
 
+test('baby monitor: the mic loudness meter appears on the controller when monitoring (M8a)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'MonitorRoom');
+
+  // Turn on the baby monitor (fake mic auto-granted via the launch flags).
+  const toggle = player.locator('#monitorToggle');
+  await expect(toggle).toBeVisible({ timeout: 10000 });
+  await toggle.click();
+  await expect(toggle).toContainText(/on/i, { timeout: 10000 });
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const card = c.locator('.card', { hasText: 'MonitorRoom' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  // The room-sound meter shows once the device reports a mic level.
+  await expect(card.locator('.mic')).toBeVisible({ timeout: 10000 });
+  await ctx.close();
+});
+
 test('pre-arm hardening checklist persists across a reload (P9)', async ({ browser }) => {
   const ctx = await browser.newContext();
   const p = await ctx.newPage();

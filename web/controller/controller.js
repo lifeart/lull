@@ -24,6 +24,9 @@ let soundscapes = [{ id: 'white', label: 'White' }];
 const cards = new Map(); // deviceId -> { el, update }
 const lastState = new Map(); // deviceId -> { online, state } for spontaneous-failure alarms
 const dragging = new Set(); // deviceIds whose volume slider is being dragged
+const micHigh = new Map(); // deviceId -> sustained-loud counter (baby-monitor cry detection, M8a)
+// Cry thresholds (0..1 room loudness). ON high + sustained → alarm; hysteresis to OFF clears it.
+const CRY_ON = 0.6, CRY_OFF = 0.35, CRY_SUSTAIN = 3;
 
 // --- token (optional shared secret; distributed via URL, persisted, appended to WS) ---
 function authToken() {
@@ -116,14 +119,28 @@ function reconcileAlarms(next) {
       else if (d.online && st === STATES.ERROR && prev.state !== STATES.ERROR) raiseAlarm(d.deviceId, 'audio error — not playing');
       else if (d.online && st === STATES.REQUIRES_GESTURE && wasPlaying) raiseAlarm(d.deviceId, 'needs a screen tap to resume');
     }
-    // P5: auto-de-escalate — if the device that raised the ACTIVE alarm has recovered to a healthy
+    // P5: auto-de-escalate a FAILURE alarm — if the device that raised it recovered to a healthy
     // online state, silence the siren and demote the banner to a passive "recovered" note (still
-    // dismissable). Never trusts the socket alone: requires a real PLAYING/STOPPED report.
-    if (alarmDeviceId === d.deviceId && d.online && (st === STATES.PLAYING || st === STATES.STOPPED)) {
+    // dismissable). Never trusts the socket alone: requires a real PLAYING/STOPPED report. Does NOT
+    // apply to a 'cry' alarm — a crying room is "healthy", so cries clear on the level dropping (below).
+    if (alarmKind === 'failure' && alarmDeviceId === d.deviceId && d.online && (st === STATES.PLAYING || st === STATES.STOPPED)) {
       const name = d.friendlyName || d.deviceId;
       stopAlarm();
       $('alarmText').textContent = `✓ ${name} recovered`;
-      alarmDeviceId = null;
+      alarmDeviceId = null; alarmKind = null;
+    }
+    // Baby monitor (M8a): sustained loud room → "possible crying"; clears when it goes quiet again.
+    const lvl = (d.reported || {}).micLevel;
+    if (typeof lvl === 'number') {
+      const m = micHigh.get(d.deviceId) || { count: 0 };
+      if (lvl >= CRY_ON) m.count++; else if (lvl < CRY_OFF) m.count = 0;
+      const alreadyCrying = alarmKind === 'cry' && alarmDeviceId === d.deviceId;
+      if (m.count >= CRY_SUSTAIN && !alreadyCrying) raiseAlarm(d.deviceId, 'possible crying — loud in the room', 'cry');
+      if (alreadyCrying && lvl < CRY_OFF) {
+        const name = d.friendlyName || d.deviceId;
+        stopAlarm(); $('alarmText').textContent = `✓ ${name} quiet again`; alarmDeviceId = null; alarmKind = null; m.count = 0;
+      }
+      micHigh.set(d.deviceId, m);
     }
     lastState.set(d.deviceId, { online: d.online, state: st });
   }
@@ -159,15 +176,16 @@ function onAckTimeout(cmdId) {
 }
 
 let alarmDeviceId = null; // the device that raised the ACTIVE alarm (for P5 auto-de-escalation)
-function raiseAlarm(deviceId, why) {
+let alarmKind = null;     // 'failure' | 'cry' — cries de-escalate on quiet, failures on recovery
+function raiseAlarm(deviceId, why, kind = 'failure') {
   const d = devices.find((x) => x.deviceId === deviceId);
   const name = d ? d.friendlyName : deviceId;
-  alarmDeviceId = deviceId;
+  alarmDeviceId = deviceId; alarmKind = kind;
   $('alarmBanner').hidden = false;
-  $('alarmText').textContent = `⚠ ${name}: ${why}`;
+  $('alarmText').textContent = `${kind === 'cry' ? '👶' : '⚠'} ${name}: ${why}`;
   startAlarm();
 }
-function clearAlarm() { stopAlarm(); alarmDeviceId = null; $('alarmBanner').hidden = true; }
+function clearAlarm() { stopAlarm(); alarmDeviceId = null; alarmKind = null; $('alarmBanner').hidden = true; }
 
 // --- ambient health / auto pre-flight (P3) --------------------------------------------------------
 // A SILENT, continuous liveness check (on connect, on foreground, every 60s) that drives a persistent
@@ -297,6 +315,7 @@ function makeCard(deviceId, tier, caps) {
     </div>
     <div class="sound"></div>
     <div class="vol"></div>
+    <div class="mic sec" hidden><div class="sec-label" style="margin-bottom:6px">👶 Room sound</div><div class="meter"><span class="meter-fill"></span></div></div>
     <div class="lockline faint" style="margin-top:14px"></div>`;
 
   const refs = {
@@ -304,6 +323,7 @@ function makeCard(deviceId, tier, caps) {
     chip: el.querySelector('.statechip'), eq: el.querySelector('.eq'), rem: el.querySelector('.rem'),
     start: el.querySelector('.go'), stop: el.querySelector('.btn-danger'), lock: el.querySelector('.lockline'),
     forget: el.querySelector('.forget'), soundChips: new Map(), timerChips: new Map(), slider: null, setFill: null,
+    mic: el.querySelector('.mic'), meterFill: el.querySelector('.meter-fill'),
   };
 
   refs.start.addEventListener('click', () => startDevice(deviceId)); // carries the remembered timer (P1)
@@ -395,6 +415,13 @@ function makeCard(deviceId, tier, caps) {
     refs.chip.className = 'statechip';
     for (const cls of stateClass(rep.state, d.online).split(' ').filter(Boolean)) refs.chip.classList.add(cls);
     refs.eq.hidden = !(d.online && rep.state === STATES.PLAYING);
+    // Baby-monitor loudness meter — shown only while the device is reporting a level (monitor on).
+    const lvl = rep.micLevel;
+    if (typeof lvl === 'number' && d.online) {
+      refs.mic.hidden = false;
+      refs.meterFill.style.width = `${Math.round(Math.min(1, Math.max(0, lvl)) * 100)}%`;
+      refs.meterFill.classList.toggle('hot', lvl >= CRY_ON);
+    } else { refs.mic.hidden = true; }
     refs.forget.hidden = d.online; // only offer "Forget" for a currently-offline (ghost) device
     refs.lock.textContent = '🔒 ' + lockSummary(d.tier || 'LEGACY');
     refs.rem.textContent = d.remainingSec != null ? fmt(d.remainingSec) : '—';

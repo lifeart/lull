@@ -200,6 +200,7 @@ export class Hub {
       remainingSec: msg.remainingSec,
       soundscape: msg.soundscape,
       tier: msg.tier,
+      micLevel: msg.micLevel, // baby-monitor room loudness (0..1 or undefined) — M8a
     });
     this._broadcastDevices();
   }
