@@ -72,7 +72,7 @@ The hub ships a real auth model; you don't add code, you set a secret.
 - **Synology NAS (Container Manager):** [DEPLOY-SYNOLOGY.md](DEPLOY-SYNOLOGY.md) — plain-HTTP LAN, DSM
   HTTPS reverse proxy, and the Cloudflare Tunnel option, step by step.
 - **Any Docker host:** the repo's `Dockerfile` + compose run non-root with a healthcheck. Set `MP_TOKEN`
-  (and `MP_ORIGIN` behind a Host-rewriting proxy). Persist `/app/data` for the registry + uploads.
+  (and `MP_ORIGIN` behind a Host-rewriting proxy). Persist `/data` for the registry + uploads (`STATE_FILE=/data/state.json`, `UPLOADS_DIR=/data/uploads`).
 - **Bare Node:** `npm ci && npm run bake && MP_TOKEN=$(openssl rand -hex 24) npm start`, then open the
   apps with `#t=<that token>`.
 - **Better ambient sounds (optional):** `npm run fetch:real` overlays human-cleared CC0/PD recordings for

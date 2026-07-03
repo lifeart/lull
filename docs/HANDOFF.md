@@ -57,7 +57,7 @@ limits (§7) and the overnight-test gate.
 ## 3. Run / test / deploy
 ```bash
 npm install                       # one runtime dep: ws
-npm run bake                      # generate seamless white/pink/brown loops + PNG icons
+npm run bake                      # 10 seamless −16 LUFS loops (white/pink/brown + rain/ocean/wind/fireplace/fan/womb/heartbeat) + icons
 npm start                         # hub on http://localhost:8080  (localhost is a secure context)
 npm test                          # 88 node tests
 npx playwright install chromium   # once
@@ -100,10 +100,12 @@ deploy/              Dockerfile (non-root via su-exec entrypoint + HEALTHCHECK),
                      (hub + Caddy), docker-compose.synology.yml (hub-only for a NAS), Caddyfile,
                      entrypoint.sh, dnsmasq, install.sh
 docs/                DESIGN.md, HANDOFF.md (this), HARDENING.md, RECOVERY-CARD.md, OVERNIGHT-TEST.md,
-                     DEPLOY-SYNOLOGY.md (NAS: plain-HTTP vs DSM-HTTPS, TLS trade-offs),
+                     DEPLOY.md (deployment matrix + public-tunnel auth), DEPLOY-SYNOLOGY.md (NAS recipe),
                      RESEARCH-AMBIENT-SOUNDS.md (licensed sound sourcing + auto-download + favorites),
-                     RESEARCH-BABY-MONITOR.md (radio-nanny / mic-monitor feasibility, M8)
-demo/                mock-hub.js (in-browser hub) + index.html; built by pipeline/build-demo.js →
+                     RESEARCH-BABY-MONITOR.md (radio-nanny / mic-monitor feasibility, M8),
+                     RESEARCH-SOUND-SCIENCE.md (evidence-based baby-sleep sounds + synthesis recipes)
+demo/                mock-hub.js + rtc-hub.js (in-browser + WebRTC hubs) + intro/landing pages; built by
+                     pipeline/build-demo.js → _site/ (intro at /, /live/, /rtc/)
                      _site/, deployed by .github/workflows/pages.yml
 ```
 

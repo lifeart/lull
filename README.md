@@ -49,9 +49,9 @@ So the design does **not** try to "wake a silent iPad and make it play." Instead
 npm install                       # runtime dep: ws
 npm run bake                      # generate seamless white/pink/brown loops + PNG app icons
 npm start                         # hub on http://localhost:8080
-npm test                          # 80 node tests: protocol, seams, audio engine, hub, static, auth, store, hardening
+npm test                          # 88 node tests: protocol, seams, audio engine, hub, static, auth, store, hardening
 npx playwright install chromium   # once, for the browser e2e
-npm run test:e2e                  # 12 real-browser tests: arm, start/stop, volume, timer, alarm, soundscape, upload, reorder, forget
+npm run test:e2e                  # 25 real-browser tests: arm, start/stop, volume, timer, alarm, soundscape, upload, reorder, forget
 ```
 
 **Sounds:** white / pink / brown noise **plus ambient loops — rain, ocean, wind, fireplace, fan, womb,

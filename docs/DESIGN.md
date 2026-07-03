@@ -83,7 +83,7 @@ Therefore the design is **tiered by honesty**, not by wishful features:
 
 | Component | Runs on | Responsibility |
 |---|---|---|
-| **Hub server** | always-on LAN box (Pi/NAS/Mac mini/laptop) | Serves both PWAs, WebSocket relay, **desired/reported** state store (SQLite WAL), device registry, hub-owned sleep-timer, origin for baked noise files. Single source of truth. |
+| **Hub server** | always-on LAN box (Pi/NAS/Mac mini/laptop) | Serves both PWAs, WebSocket relay, **desired/reported** state store (atomic JSON file, temp-file + rename; zero native deps), device registry, hub-owned sleep-timer, origin for the sound files. Single source of truth. |
 | **Caddy (TLS)** | same box | Terminates HTTPS with an iOS-trusted cert; keeps media `Range`/206 intact. |
 | **Player PWA** | each old iPhone/iPad | The "speaker": arm gesture, pure `<audio>` loop (background substrate), optional GainNode (Tier-Modern), MediaSession, WS client + heartbeat + recovery state machine, reports capabilities + state. |
 | **Controller PWA** | parent's current phone | Lists devices w/ live state; issues start/stop/volume/timer; runs pre-flight; **alarms the parent** on ACK-timeout/stale device. |
@@ -118,32 +118,33 @@ One shared module (`/shared/protocol`) is imported by hub, player, and controlle
 
 ```jsonc
 // Player → Hub on connect
-{ "type": "hello", "role": "player", "deviceId": "nursery-ipad-air2",
+{ "t": "hello", "role": "player", "deviceId": "nursery-ipad-air2",
   "friendlyName": "Nursery", "caps": { "tier": "MID", "audioSession": false,
   "gainNode": true, "wakeLock": false, "mediaSession": true } }
 
 // Hub → Player: authoritative full state (sent on EVERY connect — replace-all)
-{ "type": "stateSnapshot", "deviceId": "nursery-ipad-air2",
-  "desired": { "verb": "start", "gainLinear": 0.30, "soundscape": "white",
+{ "t": "snapshot", "deviceId": "nursery-ipad-air2",
+  "desired": { "verb": "start", "gainLinear": 0.30, "soundscape": "pink",
   "endsAtEpochMs": 1751408100000 }, "serverEpochMs": 1751405400000 }
 
 // Controller → Hub, Hub → Player: incremental command (merge delta), needs ACK
-{ "type": "command", "target": "nursery-ipad-air2", "verb": "setGain",
+{ "t": "command", "target": "nursery-ipad-air2", "verb": "setGain",
   "gainLinear": 0.15, "cmdId": "c-8f3a" }
 // verbs: start | stop | setGain | setTimer | setSoundscape
 
 // Player → Hub: telemetry (player-owned; never mutates desired)
-{ "type": "report", "deviceId": "nursery-ipad-air2", "state": "playing",
+{ "t": "report", "deviceId": "nursery-ipad-air2", "state": "playing",
   "gainLinear": 0.30, "remainingSec": 2700, "cmdId": "c-8f3a" }
 // state: playing | stopped | requires_gesture | error
 
-// Player → Hub: heartbeat every 20–30s; missed pong ⇒ terminate + reconnect
-{ "type": "ping", "deviceId": "nursery-ipad-air2" }
+// Hub → Player: app-level heartbeat ping every ~25 s (HEARTBEAT_MS); client replies { "t": "pong" }.
+// No pong within the grace window ⇒ the hub terminates the socket (a dead iOS tab fires no close).
+{ "t": "ping" }
 ```
 
 Rules that prevent the flagged fatals:
 - **`desired` (controller-owned intent)** and **`reported` (player-owned telemetry)** are stored separately; players conform to desired and **never mutate it**.
-- **`stateSnapshot` replaces all**, sent on every (re)connect → a reconnect after any outage is always correct.
+- **The `snapshot` replaces all**, sent on every (re)connect → a reconnect after any outage is always correct.
 - Timer is an **absolute `endsAtEpochMs`** owned by the hub; the hub flips desired to `stop` at the deadline.
 - One **verb enum** used identically both directions; the hub **clamps `gainLinear` to a soft-cap** and **NACKs unknown verbs**.
 - Routing key is the **stable `deviceId`**, not the friendly name.
@@ -155,13 +156,13 @@ Rules that prevent the flagged fatals:
 
 | Layer | Choice | Why |
 |---|---|---|
-| Hub runtime | **Node.js LTS**, one process: `http` static + `ws` + `better-sqlite3` (WAL). One small Docker image. | Runs on the widest hardware (Pi armv7/arm64, NAS, Mac mini). Two deps, auditable. Bun is a fine arm64-only single-binary alt. |
+| Hub runtime | **Node.js LTS**, one process: `http` static + `ws` (state = atomic JSON file, no native deps). One small Docker image. | Runs on the widest hardware (Pi armv7/arm64, NAS, Mac mini). One runtime dep (`ws`), auditable. Bun is a fine arm64-only single-binary alt. |
 | TLS / proxy | **Caddy 2**; primary Let's Encrypt **DNS-01 wildcard**; optional `*.ts.net`. | Auto-HTTPS, keeps `Range`/206, DNS-01 needs no device-side install. |
 | LAN DNS | **dnsmasq** on the hub (or router static override). | Public hostname resolves to hub LAN IP offline; survives DHCP churn. |
 | Overlay (optional) | **Tailscale + MagicDNS**, iOS 15+. | Off-LAN control / no-domain fallback. Demoted from hard dependency. |
 | PWAs | **Vanilla HTML/CSS/JS**, hand-written service worker, shared protocol module. | Minimal memory footprint is a *survival* feature on 1 GB devices; small seam surface. |
-| Noise pipeline | **ffmpeg** (+sox): crossfaded gapless loop, lossless WAV + HE-AAC + N loudness variants + `manifest.json`. | Offloads DSP; pre-baked loudness variants are the only safe "volume" knob on Tier-Legacy. |
-| State | **SQLite (WAL)**, separate `desired`/`reported` per device; log2ram on Pi SD. | Durable across reboots; the split prevents resync-resurrects-noise. |
+| Sound pipeline | **pure-Node DSP** (`pipeline/bake.js`, zero external tools): crossfaded gapless 30 s loop, one WAV per soundscape level-matched to **−16 LUFS** (ITU-R BS.1770) + `manifest.json`. `npm run fetch:real` overlays real CC0/PD recordings. | No native/tooling deps; one loudness target means switching sounds never jumps. Tier-Legacy volume is the hardware buttons (no per-file loudness variants). |
+| State | **atomic JSON file** (temp-file + rename), separate `desired`/`reported` per device. | Durable across reboots, zero native deps; the split prevents resync-resurrects-noise. (SQLite is a possible future swap for scale.) |
 | Supervision | **Docker Compose `restart: unless-stopped`** (or systemd) for hub+Caddy+dnsmasq(+Tailscale), auto-start on boot. | Hub is a SPOF; unattended recovery after power blips is mandatory. |
 | Liveness/alert | Hub 20–30 s ping/pong watchdog → `deviceOffline`; Controller **foreground Web Audio alarm + `navigator.vibrate`**; optional Web Push to the modern controller only. | Can't revive a suspended tab — detect fast + alert the awake phone. |
 
