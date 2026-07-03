@@ -532,7 +532,7 @@ function enableReorder(wrap) {
       const row = handle.closest('.uprow');
       if (!row) return;
       e.preventDefault();
-      libraryBusy = true; // block broadcast-driven rebuilds mid-drag
+      setBusy(true); // block broadcast-driven rebuilds mid-drag
       row.classList.add('dragging');
       const onMove = (ev) => {
         const y = ev.clientY;
@@ -545,7 +545,7 @@ function enableReorder(wrap) {
       };
       const finish = () => { // runs on ANY terminal event so window listeners never leak
         row.classList.remove('dragging');
-        libraryBusy = false;
+        setBusy(false);
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
         window.removeEventListener('pointercancel', onCancel);
@@ -584,13 +584,13 @@ function moveRow(id, dir) {
 }
 
 function beginRename(row, s) {
-  libraryBusy = true; // don't let a broadcast rebuild the list mid-edit
+  setBusy(true); // don't let a broadcast rebuild the list mid-edit
   row.innerHTML = '';
   const input = document.createElement('input'); input.className = 'input upedit'; input.value = s.label; input.maxLength = 60;
   input.setAttribute('aria-label', 'Rename sound');
   const finishEdit = async (doSave) => {
     if (doSave) await apiPost(`/api/upload/rename?id=${encodeURIComponent(s.id)}&name=${encodeURIComponent(input.value.trim() || s.label)}`);
-    libraryBusy = false;
+    setBusy(false);
     refreshLibrary(); // reload from server (new name on success; reverts on cancel/failure)
   };
   row.append(input, linkBtn('Save', () => finishEdit(true)), linkBtn('Cancel', () => finishEdit(false)));
@@ -599,10 +599,10 @@ function beginRename(row, s) {
 
 function deleteControl(s) {
   let armedDel = false, timer = null;
-  const disarm = () => { armedDel = false; libraryBusy = false; btn.textContent = 'Delete'; };
+  const disarm = () => { armedDel = false; setBusy(false); btn.textContent = 'Delete'; };
   const btn = linkBtn('Delete', async () => {
     if (!armedDel) { // two-tap confirm (no blocking dialog)
-      armedDel = true; libraryBusy = true; btn.textContent = 'Confirm?';
+      armedDel = true; setBusy(true); btn.textContent = 'Confirm?';
       timer = setTimeout(() => { disarm(); refreshLibrary(); }, 3000);
       return;
     }
@@ -646,13 +646,29 @@ async function uploadFile(file) {
 // volume drag is active so it can't tear down an in-progress interaction mid-gesture.
 let libraryBusy = false;
 let pendingLibraryRefresh = false;
+let refreshRetry = null;
 async function refreshLibrary() {
-  if (libraryBusy || dragging.size) { pendingLibraryRefresh = true; return; }
+  if (libraryBusy || dragging.size) {
+    // An interaction is in progress — defer, but SELF-HEAL: keep re-checking so the refresh always
+    // lands once the interaction releases, even if no explicit flush call fires.
+    pendingLibraryRefresh = true;
+    clearTimeout(refreshRetry); refreshRetry = setTimeout(flushLibraryRefresh, 400);
+    return;
+  }
   pendingLibraryRefresh = false;
   await loadSoundscapes();
   rebuildAllCards();
 }
-function flushLibraryRefresh() { if (pendingLibraryRefresh && !libraryBusy && !dragging.size) refreshLibrary(); }
+function flushLibraryRefresh() {
+  if (!pendingLibraryRefresh) return;
+  if (libraryBusy || dragging.size) { clearTimeout(refreshRetry); refreshRetry = setTimeout(flushLibraryRefresh, 400); return; }
+  refreshLibrary();
+}
+// Route every libraryBusy change through this so RELEASING an interaction always applies a refresh
+// that was deferred during it. Otherwise an upload or arrow-reorder done while a delete is armed
+// ("Confirm?") or a rename is open stays deferred and never shows — the reported "Added but nothing
+// appears" / "arrow reorder does nothing" bug (only a volume drag flushed it before).
+function setBusy(v) { libraryBusy = v; if (!v) flushLibraryRefresh(); }
 
 // Soundscape chips are created once per card; when the library changes we must recreate cards.
 function rebuildAllCards() {

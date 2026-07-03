@@ -249,6 +249,55 @@ test('drag-to-reorder sounds updates the chip order on device cards', async ({ b
   await ctx.close();
 });
 
+test('arrow reorder: the ▲▼ buttons move a library row and the card chips (bug: arrows not working)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'ArrowRoom');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const card = c.locator('.card', { hasText: 'ArrowRoom' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  const list = c.locator('#uploadList');
+  await list.scrollIntoViewIfNeeded();
+  const names = list.locator('.uprow .upname');
+  await expect(names.nth(0)).toBeVisible({ timeout: 10000 });
+
+  // Robust to whatever order prior tests left: take the 2nd row, tap its ▲, assert it swapped up.
+  const before = await names.allTextContents();
+  const first = before[0], second = before[1];
+  await list.locator('.uprow', { hasText: second }).getByRole('button', { name: new RegExp(`Move ${second} up`, 'i') }).click();
+  await expect(names.nth(0)).toHaveText(second, { timeout: 10000 });
+  await expect(names.nth(1)).toHaveText(first, { timeout: 10000 });
+  // the new top sound is first among the card's sound chips too
+  await expect(card.locator('.sound .chips .chip').nth(0)).toHaveText(second, { timeout: 10000 });
+  await ctx.close();
+});
+
+test('library refresh self-heals: an upload done while a delete is armed still appears (bug fix)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'DeferRoom');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  await expect(c.locator('.card', { hasText: 'DeferRoom' })).toBeVisible({ timeout: 10000 });
+  const list = c.locator('#uploadList');
+  const wav = readFileSync('web/player/assets/white.wav');
+
+  await c.locator('#fileInput').setInputFiles({ name: 'FirstUp.wav', mimeType: 'audio/wav', buffer: wav });
+  await expect(list.getByText('FirstUp', { exact: true })).toBeVisible({ timeout: 15000 });
+  // Arm delete on it (sets the library "busy" flag) but do NOT confirm.
+  await list.locator('.uprow', { hasText: 'FirstUp' }).getByRole('button', { name: 'Delete' }).click();
+  await expect(list.locator('.uprow', { hasText: 'FirstUp' }).getByRole('button', { name: 'Confirm?' })).toBeVisible();
+  // Upload a second while the delete is armed — before the fix this stayed deferred forever.
+  await c.locator('#fileInput').setInputFiles({ name: 'SecondUp.wav', mimeType: 'audio/wav', buffer: wav });
+  await expect(c.locator('#uploadStatus')).toContainText(/Added/i, { timeout: 15000 });
+  // It appears on its own once the interaction releases (self-heal + flush-on-disarm) — no extra tap.
+  await expect(list.getByText('SecondUp', { exact: true })).toBeVisible({ timeout: 12000 });
+  await ctx.close();
+});
+
 test('favorite a sound: the star pins it to the top of the library and the card chips', async ({ browser }) => {
   const ctx = await browser.newContext();
   const player = await ctx.newPage();
