@@ -88,7 +88,7 @@ Therefore the design is **tiered by honesty**, not by wishful features:
 | **Player PWA** | each old iPhone/iPad | The "speaker": arm gesture, pure `<audio>` loop (background substrate), optional GainNode (Tier-Modern), MediaSession, WS client + heartbeat + recovery state machine, reports capabilities + state. |
 | **Controller PWA** | parent's current phone | Lists devices w/ live state; issues start/stop/volume/timer; runs pre-flight; **alarms the parent** on ACK-timeout/stale device. |
 | **Setup wizard** | parent's phone (hub-served) | QR handoff, test-tone volume calibration, per-device iOS hardening checklist, Shortcuts autostart. |
-| **Noise pipeline** | hub, at setup time | ffmpeg/sox bakes a **seamless crossfaded ~60 s loop** (lossless WAV over LAN + HE-AAC alt) + N loudness variants + `manifest.json`. Offloads all DSP from weak devices. |
+| **Sound pipeline** | hub, at build time (`npm run bake`) | Pure-Node DSP (zero external tools) bakes a **seamless crossfaded 30 s loop** per soundscape, level-matched to **−16 LUFS** (ITU-R BS.1770), + `manifest.json`; `npm run fetch:real` overlays real CC0/PD recordings. All DSP is offline; no ffmpeg/sox. |
 
 ### 3.2 End-to-end command flow
 
