@@ -221,8 +221,12 @@ function wireRecovery() {
 
 // --- render ---
 function render() {
-  $('setup').hidden = armed;
+  // Returning device (already named): skip the setup form and offer a big dark "tap to arm" — the
+  // same one-tap recovery target, operable in the dark at 3am without focusing a text field. (P8)
+  const reArm = !armed && !!friendlyName;
+  $('setup').hidden = armed || reArm;
   $('status').hidden = !armed;
+  if (reArm) { showOverlay(`Tap to arm “${friendlyName}”`); return; }
   if (!armed) return;
   const st = engine.getState();
   const playing = st === STATES.PLAYING;

@@ -89,7 +89,7 @@ function onMessage(msg) {
     // haven't re-registered yet), and treating that as an online→offline transition would storm the
     // parent with a false alarm for every room. A room that's genuinely down is caught by the
     // bedtime pre-flight, the authoritative "all rooms up?" check. (finding #7)
-    case MSG.WELCOME: devices = msg.devices || []; seedAlarmBaseline(devices); render(); break;
+    case MSG.WELCOME: devices = msg.devices || []; seedAlarmBaseline(devices); render(); runHealthCheck(); break; // auto pre-flight (P3)
     case MSG.DEVICES: devices = msg.devices || []; reconcileAlarms(devices); render(); break;
     case MSG.ACK: onAck(msg); break;
     case MSG.LIBRARY: refreshLibrary(); break; // library changed (upload/rename/delete/reorder) — refresh
@@ -116,6 +116,15 @@ function reconcileAlarms(next) {
       else if (d.online && st === STATES.ERROR && prev.state !== STATES.ERROR) raiseAlarm(d.deviceId, 'audio error — not playing');
       else if (d.online && st === STATES.REQUIRES_GESTURE && wasPlaying) raiseAlarm(d.deviceId, 'needs a screen tap to resume');
     }
+    // P5: auto-de-escalate — if the device that raised the ACTIVE alarm has recovered to a healthy
+    // online state, silence the siren and demote the banner to a passive "recovered" note (still
+    // dismissable). Never trusts the socket alone: requires a real PLAYING/STOPPED report.
+    if (alarmDeviceId === d.deviceId && d.online && (st === STATES.PLAYING || st === STATES.STOPPED)) {
+      const name = d.friendlyName || d.deviceId;
+      stopAlarm();
+      $('alarmText').textContent = `✓ ${name} recovered`;
+      alarmDeviceId = null;
+    }
     lastState.set(d.deviceId, { online: d.online, state: st });
   }
 }
@@ -137,6 +146,7 @@ function onAck(msg) {
     (msg.ok ? preflight.ok : preflight.fail).add(p.deviceId);
     updatePreflight();
   }
+  if (p.kind === 'health') { (msg.ok ? health.ok : health.fail).add(p.deviceId); updateHealth(); return; } // silent (P3)
   if (!msg.ok) raiseAlarm(p.deviceId, msg.error || 'device did not accept the command');
 }
 function onAckTimeout(cmdId) {
@@ -144,17 +154,59 @@ function onAckTimeout(cmdId) {
   if (!p) return;
   pending.delete(cmdId);
   if (p.kind === 'probe' && preflight && preflight.need.has(p.deviceId)) { preflight.fail.add(p.deviceId); updatePreflight(); }
+  if (p.kind === 'health') { if (health) { health.fail.add(p.deviceId); updateHealth(); } return; } // silent (P3)
   raiseAlarm(p.deviceId, 'no response within 3s — device may be asleep or offline');
 }
 
+let alarmDeviceId = null; // the device that raised the ACTIVE alarm (for P5 auto-de-escalation)
 function raiseAlarm(deviceId, why) {
   const d = devices.find((x) => x.deviceId === deviceId);
   const name = d ? d.friendlyName : deviceId;
+  alarmDeviceId = deviceId;
   $('alarmBanner').hidden = false;
   $('alarmText').textContent = `⚠ ${name}: ${why}`;
   startAlarm();
 }
-function clearAlarm() { stopAlarm(); $('alarmBanner').hidden = true; }
+function clearAlarm() { stopAlarm(); alarmDeviceId = null; $('alarmBanner').hidden = true; }
+
+// --- ambient health / auto pre-flight (P3) --------------------------------------------------------
+// A SILENT, continuous liveness check (on connect, on foreground, every 60s) that drives a persistent
+// "✓ N rooms verified Ns ago" / "✗ M not responding" line — so "Check all rooms" stops being a nightly
+// ritual you must remember. It never fires the siren directly (that stays edge-triggered in
+// reconcileAlarms / command ACKs); and it can't sound before the first user gesture anyway, so a
+// pre-gesture failure degrades to the red visual line. (research P3)
+let health = null;        // in-flight round: { need:Set, ok:Set, fail:Set }
+let healthResult = null;  // last completed: { ok, fail, at }
+function runHealthCheck() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  for (const [cmdId, p] of pending) { if (p.kind === 'health') { clearTimeout(p.timer); pending.delete(cmdId); } }
+  if (!devices.length) { health = null; healthResult = null; renderHealth(); return; }
+  health = { need: new Set(devices.map((d) => d.deviceId)), ok: new Set(), fail: new Set() };
+  for (const d of devices) {
+    const probe = makeProbe({ target: d.deviceId });
+    const timer = setTimeout(() => onAckTimeout(probe.cmdId), ACK_TIMEOUT_MS);
+    pending.set(probe.cmdId, { deviceId: d.deviceId, timer, kind: 'health' });
+    send(probe);
+  }
+  renderHealth();
+}
+function updateHealth() {
+  if (!health) return;
+  if (health.ok.size + health.fail.size < health.need.size) return; // wait for all
+  healthResult = { ok: health.ok.size, fail: health.fail.size, at: Date.now() };
+  health = null;
+  renderHealth();
+}
+function agoText(sec) { return sec < 5 ? 'just now' : sec < 60 ? `${sec}s ago` : `${Math.floor(sec / 60)}m ago`; }
+function renderHealth() {
+  const el = $('healthLine'); if (!el) return;
+  if (!devices.length) { el.textContent = ''; el.className = 'healthline'; return; }
+  if (health) { el.textContent = 'Checking rooms…'; el.className = 'healthline faint'; return; }
+  if (!healthResult) { el.textContent = ''; el.className = 'healthline'; return; }
+  const ago = Math.max(0, Math.round((Date.now() - healthResult.at) / 1000));
+  if (healthResult.fail === 0) { el.textContent = `✓ ${healthResult.ok} room${healthResult.ok === 1 ? '' : 's'} verified ${agoText(ago)}`; el.className = 'healthline ok'; }
+  else { el.textContent = `✗ ${healthResult.fail} room${healthResult.fail === 1 ? '' : 's'} not responding — check before bed`; el.className = 'healthline bad'; }
+}
 
 // --- bedtime pre-flight ---
 function runPreflight() {
@@ -392,7 +444,10 @@ setInterval(() => {
     const r = remainingSec(d.desired, Date.now());
     card.el.querySelector('.rem').textContent = r != null ? fmt(r) : '—';
   }
+  renderHealth(); // keep the "verified Ns ago" fresh (P3)
 }, 1000);
+// Ambient auto pre-flight: re-verify every 60s while foregrounded, and on return to foreground. (P3)
+setInterval(() => { if (document.visibilityState === 'visible') runHealthCheck(); }, 60000);
 
 async function loadSoundscapes() {
   try {
@@ -723,6 +778,6 @@ soundsCard.addEventListener('drop', (e) => { const f = e.dataTransfer && e.dataT
 document.addEventListener('click', primeAlarm, { once: true });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch((e) => console.warn('sw reg failed', e));
 window.addEventListener('online', () => { if (!ws) connect(); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !ws) connect(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { if (!ws) connect(); else runHealthCheck(); } });
 await loadSoundscapes();
 connect();

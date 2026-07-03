@@ -292,20 +292,24 @@ test('inline ＋ chip opens the picker and adds a sound to the card', async ({ b
 });
 
 test('multi-device: two rooms appear; closing one alarms only it by name', async ({ browser }) => {
-  const ctx = await browser.newContext();
-  const p1 = await ctx.newPage();
-  const p2 = await ctx.newPage();
+  // Separate contexts = isolated localStorage = two genuinely distinct devices (one context would
+  // share mp.deviceId/mp.name and collapse them into one).
+  const ctx1 = await browser.newContext();
+  const ctx2 = await browser.newContext();
+  const ctxC = await browser.newContext();
+  const p1 = await ctx1.newPage();
+  const p2 = await ctx2.newPage();
   await armPlayer(p1, 'RoomOne');
   await armPlayer(p2, 'RoomTwo');
 
-  const controller = await ctx.newPage();
+  const controller = await ctxC.newPage();
   await controller.goto('/controller/');
   await expect(controller.locator('.card', { hasText: 'RoomOne' })).toBeVisible({ timeout: 10000 });
   await expect(controller.locator('.card', { hasText: 'RoomTwo' })).toBeVisible({ timeout: 10000 });
 
   await p2.close();
   await expect(controller.locator('#alarmText')).toContainText('RoomTwo', { timeout: 10000 });
-  await ctx.close();
+  await ctx1.close(); await ctx2.close(); await ctxC.close();
 });
 
 test('forget: an offline (ghost) device can be removed from the controller (finding #3)', async ({ browser }) => {
@@ -327,6 +331,61 @@ test('forget: an offline (ghost) device can be removed from the controller (find
   await expect(forget).toHaveText(/Confirm/i);
   await forget.click();                       // confirm → hub drops the registration
   await expect(card).toHaveCount(0, { timeout: 10000 }); // card disappears
+  await ctx.close();
+});
+
+test('ambient health: the controller auto-verifies rooms with no manual check (P3)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'HealthRoom');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  await expect(c.locator('.card', { hasText: 'HealthRoom' })).toBeVisible({ timeout: 10000 });
+  // The health line auto-populates (no "Check all rooms" tap) once the auto-probe resolves.
+  // (Exact wording depends on whether other rooms are online — a shared-hub test may see ghosts.)
+  await expect(c.locator('#healthLine')).toContainText(/verified|not responding/i, { timeout: 10000 });
+  await ctx.close();
+});
+
+test('alarm auto-de-escalates once the room recovers (P5)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  await armPlayer(p, 'RecoverRoom');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  await expect(c.locator('.card', { hasText: 'RecoverRoom' })).toBeVisible({ timeout: 10000 });
+
+  await p.close(); // offline → siren + banner
+  await expect(c.locator('#alarmText')).toContainText('RecoverRoom', { timeout: 10000 });
+
+  // Bring the SAME device back (same context → same deviceId) and re-arm via the tap-to-arm overlay.
+  const p2 = await ctx.newPage();
+  await p2.goto('/player/');
+  await p2.locator('#overlay').click();
+  await expect(p2.locator('#status')).toBeVisible({ timeout: 10000 });
+
+  // The banner demotes to a passive "recovered" note (siren silenced).
+  await expect(c.locator('#alarmText')).toContainText(/recovered/i, { timeout: 10000 });
+  await ctx.close();
+});
+
+test('fast re-arm: a returning device boots to a big "tap to arm", not the form (P8)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  await armPlayer(p, 'ReturnRoom'); // persists mp.name + mp.deviceId in this context
+  await p.reload();
+
+  // Returning, un-armed: the setup form is skipped for a big dark tap-to-arm overlay.
+  await expect(p.locator('#overlay')).toHaveClass(/show/, { timeout: 10000 });
+  await expect(p.locator('#overlayText')).toContainText(/Tap to arm/i);
+  await expect(p.locator('#overlayText')).toContainText('ReturnRoom');
+  await expect(p.locator('#setup')).toBeHidden();
+
+  await p.locator('#overlay').click(); // one tap re-arms — no typing
+  await expect(p.locator('#status')).toBeVisible({ timeout: 10000 });
+  await expect(p.locator('#stateLine')).toContainText(/armed & connected|Playing/i, { timeout: 10000 });
   await ctx.close();
 });
 
