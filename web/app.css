@@ -1,6 +1,11 @@
 /* mesh-playback design system — Apple Human Interface style.
  * System colors + system fills, 8-pt spacing scale, grouped-list rhythm, SF type scale.
  * Follows the OS light/dark. Class names are stable so markup/JS need no changes.
+ *
+ * Color roles (HIG review): every tint has a *text-safe* variant so all text meets WCAG AA
+ * (≥4.5:1) in BOTH schemes — vivid system tints stay for decorative fills (dot, eq, slider),
+ * the darker "accessible" variants (Apple's own accessible palette) carry text and filled
+ * buttons with white labels. Keep that split when adding colors.
  */
 
 :root {
@@ -19,16 +24,22 @@
 
   /* Labels */
   --text: #1c1c1e;
-  --muted: rgba(60, 60, 67, 0.6);
+  --muted: rgba(60, 60, 67, 0.72); /* was 0.6 (≈3.5:1 on white) — 0.72 clears WCAG AA at 15px */
   --faint: #6d6d72; /* WCAG AA ≥4.5:1 on the light surfaces (was rgba(...,0.32), ~1.8:1) — finding #20 */
 
-  /* Tints (systemBlue/Green/Orange/Red) */
-  --accent: #007aff;
-  --accent-press: #0067d6;
-  --play: #34c759;
+  /* Tints. Vivid system colors for FILLS; *-text/-deep are Apple's accessible variants for TEXT
+   * and for fills that carry white labels (systemBlue/Green/Red fail AA under white text). */
+  --accent: #0071e3;                       /* text + fills; 4.7:1 under white, AA as link on cards */
+  --accent-fill: #0071e3;                  /* filled buttons / pressed chips (white label) */
+  --accent-press: #005bb5;
+  --play: #34c759;                         /* decorative fills only (status dot) */
+  --play-text: #1d7a30;                    /* “playing” text, hub-online, eq — 5.0:1 on white */
+  --play-deep: #1d7a30;                    /* Start button fill under white text (5.4:1) */
   --play-dim: rgba(52, 199, 89, 0.16);
-  --warn: #ff9500;
-  --danger: #ff3b30;
+  --warn: #c93400;                         /* accessible systemOrange — “needs tap”/“error” text */
+  --danger: #d70015;                       /* accessible systemRed */
+  --danger-text: #d70015;
+  --danger-deep: #d70015;                  /* alarm banner fill — 5.4:1 under white text */
   --danger-bg: rgba(255, 59, 48, 0.12);
 
   /* Radii */
@@ -62,12 +73,17 @@
     --muted: rgba(235, 235, 245, 0.6);
     --faint: #9a9aa2; /* WCAG AA on the dark surfaces — finding #20 */
 
-    --accent: #0a84ff;
+    --accent: #0a84ff;                     /* dark links need the vivid blue (4.7:1 on surfaces) */
+    --accent-fill: #0071e3;                /* deeper fill so white button labels stay ≥4.5:1 */
     --accent-press: #409cff;
     --play: #30d158;
+    --play-text: #30d158;                  /* 8.8:1 on dark surfaces — no split needed */
+    --play-deep: #1d7a30;
     --play-dim: rgba(48, 209, 88, 0.2);
     --warn: #ff9f0a;
     --danger: #ff453a;
+    --danger-text: #ff6961;                /* accessible dark systemRed — Stop label ≥4.5:1 on its tint */
+    --danger-deep: #e02418;                /* alarm banner fill — 4.7:1 under white text */
     --danger-bg: rgba(255, 69, 58, 0.18);
 
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.5);
@@ -75,9 +91,11 @@
   }
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
 
+/* Paint html too so iOS rubber-band overscroll shows the scheme background, not white/black. */
+html { background: var(--bg); }
 html, body { height: 100%; }
 
 body {
@@ -102,7 +120,7 @@ h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; margin: 0;
 .muted { color: var(--muted); font-size: 0.9375rem; }
 .faint { color: var(--faint); font-size: 0.8125rem; line-height: 1.35; }
 .mono { font-variant-numeric: tabular-nums; }
-.sec-label { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin: 0 0 var(--s2) 2px; }
+.sec-label { font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin: 0 0 var(--s2) 2px; }
 
 .appbar { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); max-width: var(--maxw); margin: var(--s1) auto var(--s4); }
 .appbar h1 { font-size: 1.5rem; }
@@ -110,14 +128,16 @@ h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; margin: 0;
 /* Cards — inset grouped: soft shadow (light) / hairline (dark) */
 .card { background: var(--surface); border-radius: var(--radius-lg); padding: var(--pad); box-shadow: var(--shadow); }
 @media (prefers-color-scheme: dark) { .card { box-shadow: none; border: 0.5px solid var(--border); } }
-.card + .card { margin-top: var(--s3); }
-.card.offline { opacity: 0.5; }
+.card + .card { margin-top: var(--s4); }
+/* Offline: recede the inert controls but keep the header row (name, “offline”, Forget) fully
+ * legible — the only actionable thing on a dead card must not be dimmed with it. */
+.card.offline > :not(.row) { opacity: 0.45; }
 .card.attention { box-shadow: 0 0 0 1.5px var(--warn), var(--shadow); }
 
 .row { display: flex; align-items: center; gap: var(--s2); }
 .row.wrap { flex-wrap: wrap; }
 .spacer { margin-left: auto; }
-.stack { display: flex; flex-direction: column; gap: var(--s3); }
+.stack { display: flex; flex-direction: column; gap: var(--s4); }
 .sec { margin-top: var(--s5); }
 
 /* Buttons */
@@ -130,6 +150,7 @@ h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; margin: 0;
   color: var(--text); background: var(--fill-1);
   border: 0; border-radius: var(--radius);
   cursor: pointer; touch-action: manipulation;
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
   transition: opacity 0.15s ease, background 0.15s ease;
 }
 .btn:active { opacity: 0.5; }
@@ -137,39 +158,43 @@ h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; margin: 0;
 .btn:focus-visible { outline: none; box-shadow: var(--ring); }
 .btn.block { width: 100%; }
 .btn.big { min-height: 54px; font-size: 1.1rem; border-radius: 14px; }
-.btn-primary { background: var(--accent); color: #fff; }
-.btn-play { background: var(--play); color: #fff; }
-.btn-danger { background: var(--danger-bg); color: var(--danger); }
+.btn-primary { background: var(--accent-fill); color: #fff; }
+.btn-play { background: var(--play-deep); color: #fff; }
+.btn-danger { background: var(--danger-bg); color: var(--danger-text); }
 .btn-ghost { background: transparent; color: var(--accent); }
 .btnrow { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
 
-/* Pills (timers, soundscapes) */
+/* Pills (timers, soundscapes) — 36px visual height (iOS pill scale) with an invisible
+ * ±4px hit-area extension so the effective touch target is 44pt without bloating the look. */
 .chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .chip {
   -webkit-appearance: none; appearance: none;
-  min-height: 36px; padding: 0 15px;
+  position: relative;
+  min-height: 36px; min-width: 44px; padding: 0 15px;
   font: inherit; font-size: 0.9375rem; font-weight: 500; letter-spacing: -0.01em;
   color: var(--text); background: var(--fill-1);
   border: 0; border-radius: var(--radius-pill);
   cursor: pointer; touch-action: manipulation;
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
   transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
+.chip::after { content: ""; position: absolute; top: -4px; bottom: -4px; left: 0; right: 0; }
 .chip:active { opacity: 0.5; }
 .chip:focus-visible { outline: none; box-shadow: var(--ring); }
-.chip[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+.chip[aria-pressed="true"] { background: var(--accent-fill); color: #fff; font-weight: 600; }
 
 /* Status dot / badge / state */
 .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--faint); }
 .dot.on { background: var(--play); }
 .dot.off { background: var(--faint); }
-.badge { font-size: 0.66rem; letter-spacing: 0.03em; font-weight: 600; padding: 3px 8px; border-radius: var(--radius-pill); background: var(--fill-1); color: var(--muted); text-transform: uppercase; }
+.badge { font-size: 0.6875rem; letter-spacing: 0.03em; font-weight: 600; padding: 3px 8px; border-radius: var(--radius-pill); background: var(--fill-1); color: var(--muted); text-transform: uppercase; }
 .statechip { font-size: 0.9375rem; font-weight: 500; color: var(--muted); }
-.statechip.playing { color: var(--play); }
-.statechip.bad { color: var(--warn); }
+.statechip.playing { color: var(--play-text); font-weight: 600; }
+.statechip.bad { color: var(--warn); font-weight: 600; }
 
-/* iOS slider */
+/* iOS slider — 44px input height for the touch target; track/thumb stay iOS-sized */
 .slider-row { display: flex; align-items: center; gap: var(--s4); width: 100%; }
-input[type="range"] { -webkit-appearance: none; appearance: none; flex: 1; height: 28px; background: transparent; margin: 0; }
+input[type="range"] { -webkit-appearance: none; appearance: none; flex: 1; height: 44px; background: transparent; margin: 0; }
 input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(var(--accent), var(--accent)) no-repeat, var(--fill-2); background-size: var(--fill, 40%) 100%; }
 input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 27px; height: 27px; margin-top: -11.5px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.24), 0 0 0 0.5px rgba(0, 0, 0, 0.04); }
 input[type="range"]:focus-visible { outline: none; }
@@ -183,15 +208,15 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 
 /* Banners — solid systemRed alert, no pulsing */
 .banner { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); border-radius: 14px; margin: 0 auto var(--s3); max-width: var(--maxw); }
-.banner.alarm { position: sticky; top: var(--s2); z-index: 20; background: var(--danger); color: #fff; box-shadow: var(--shadow); font-weight: 500; }
-.banner.alarm .btn { margin-left: auto; min-height: 38px; padding: 0 var(--s4); background: rgba(255, 255, 255, 0.22); color: #fff; }
+.banner.alarm { position: sticky; top: var(--s2); top: calc(env(safe-area-inset-top) + var(--s2)); z-index: 20; background: var(--danger-deep); color: #fff; box-shadow: var(--shadow); font-weight: 600; }
+.banner.alarm .btn { margin-left: auto; min-height: 44px; padding: 0 var(--s4); background: rgba(255, 255, 255, 0.22); color: #fff; }
 .hub { font-size: 0.9rem; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
-.hub.online { color: var(--play); } .hub.offline { color: var(--danger); } .hub.connecting { color: var(--warn); }
+.hub.online { color: var(--play-text); } .hub.offline { color: var(--danger-text); } .hub.connecting { color: var(--warn); }
 .countdown { font-variant-numeric: tabular-nums; color: var(--muted); }
 
-/* Now-playing waveform (decorative; symmetric bars) */
+/* Now-playing waveform (decorative; symmetric bars) — matches the “playing” text color */
 .eq { display: inline-flex; align-items: center; gap: 2.5px; height: 18px; }
-.eq span { width: 3px; background: var(--play); border-radius: 2px; height: 30%; animation: eq 0.95s ease-in-out infinite; }
+.eq span { width: 3px; background: var(--play-text); border-radius: 2px; height: 30%; animation: eq 0.95s ease-in-out infinite; }
 .eq span:nth-child(1) { animation-delay: 0s; }
 .eq span:nth-child(2) { animation-delay: 0.12s; }
 .eq span:nth-child(3) { animation-delay: 0.24s; }
@@ -204,25 +229,32 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 .uprow { display: flex; align-items: center; gap: var(--s2); padding: 10px 0; border-top: 0.5px solid var(--border); }
 .uprow:first-child { border-top: 0; }
 .upname { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.upedit { flex: 1; min-height: 40px; }
+.upedit { flex: 1; min-height: 44px; }
 .uprow.dragging { opacity: 0.7; background: var(--fill-1); border-radius: 10px; border-top-color: transparent; }
 .handle { cursor: grab; color: var(--faint); font-size: 1.15rem; line-height: 1; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; margin-left: -4px; touch-action: none; user-select: none; -webkit-user-select: none; }
 .handle:active { cursor: grabbing; }
 .card.dropping { outline: 2px dashed var(--accent); outline-offset: -6px; }
 .chip-add { color: var(--accent); font-weight: 700; }
 /* ≥44px hit areas so stressed one-handed / VoiceOver users can operate the secondary controls — finding #20 */
-.link-btn { -webkit-appearance: none; appearance: none; background: transparent; border: 0; padding: 6px 8px; min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--accent); cursor: pointer; }
-.link-btn.danger { color: var(--danger); }
+.link-btn { -webkit-appearance: none; appearance: none; background: transparent; border: 0; padding: 6px 8px; min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--accent); cursor: pointer; border-radius: 8px; }
+.link-btn.danger { color: var(--danger-text); }
 .link-btn:active { opacity: 0.5; }
+.link-btn:focus-visible { outline: none; box-shadow: var(--ring); }
 
-/* Full-screen tap-to-resume */
-.overlay { position: fixed; inset: 0; z-index: 50; display: none; align-items: center; justify-content: center; text-align: center; padding: 40px; background: #000; color: rgba(235, 235, 245, 0.5); }
+/* Full-screen tap-to-resume — deliberately dim (a lit screen in a dark nursery is a bug),
+ * but still ≥4.5:1 on black. */
+.overlay { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 50; display: none; align-items: center; justify-content: center; text-align: center; padding: 40px; background: #000; color: rgba(235, 235, 245, 0.5); cursor: pointer; }
 .overlay.show { display: flex; }
 .overlay .big { font-size: 1.2rem; }
+.overlay:focus-visible { outline: 2px solid rgba(235, 235, 245, 0.4); outline-offset: -8px; }
+
+/* Empty state — centered guidance, placeholder outline instead of a bare paragraph */
+#empty { text-align: center; padding: var(--s6) var(--s4); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }
 
 /* Landing tiles */
 a.tile { display: block; text-decoration: none; color: var(--text); }
 a.tile b { color: var(--accent); font-size: 1.1rem; }
+a.tile:active { opacity: 0.6; }
 
 @keyframes eq { 0%, 100% { height: 28%; } 50% { height: 100%; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

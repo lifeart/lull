@@ -4,10 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
   <title>mesh-playback — live demo</title>
   <style>
-    :root { color-scheme: light dark; --bg:#f2f2f7; --fg:#1c1c1e; --muted:#6d6d72; --card:#fff; --line:rgba(60,60,67,.18); --accent:#0a84ff; }
-    @media (prefers-color-scheme: dark) { :root { --bg:#000; --fg:#f2f2f7; --muted:#9a9aa2; --card:#1c1c1e; --line:rgba(235,235,245,.18); } }
+    :root { color-scheme: light dark; --bg:#f2f2f7; --fg:#1c1c1e; --muted:#6d6d72; --card:#fff; --line:rgba(60,60,67,.18); --accent:#0066cc; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#000; --fg:#f2f2f7; --muted:#9a9aa2; --card:#1c1c1e; --line:rgba(235,235,245,.18); --accent:#0a84ff; } }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif; }
     header { max-width:1100px; margin:0 auto; padding:28px 20px 8px; }
@@ -25,7 +27,7 @@
     .pane h2 .tag { font-weight:600; color:var(--muted); font-size:.8rem; }
     .pane .bar { padding:8px 12px; border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:center; }
     .pane iframe { width:100%; height:640px; border:0; display:block; background:var(--bg); }
-    button.mini { -webkit-appearance:none; appearance:none; border:1px solid var(--line); background:transparent; color:var(--accent); font:inherit; font-size:.85rem; font-weight:600; padding:8px 12px; border-radius:10px; cursor:pointer; min-height:40px; }
+    button.mini { -webkit-appearance:none; appearance:none; border:1px solid var(--line); background:transparent; color:var(--accent); font:inherit; font-size:.85rem; font-weight:600; padding:8px 12px; border-radius:10px; cursor:pointer; min-height:44px; }
     footer { max-width:1100px; margin:0 auto; padding:0 20px 48px; color:var(--muted); font-size:.85rem; }
     code { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:1px 5px; font-size:.85em; }
   </style>

@@ -136,7 +136,7 @@ function runPreflight() {
   primeAlarm();
   // Cancel any in-flight probes from a prior (double-tapped) run so stale results can't leak in.
   for (const [cmdId, p] of pending) { if (p.kind === 'probe') { clearTimeout(p.timer); pending.delete(cmdId); } }
-  if (!devices.length) { setPreflight('No devices registered yet.', 'var(--danger)'); return; }
+  if (!devices.length) { setPreflight('No devices registered yet.', 'var(--danger-text)'); return; }
   preflight = { need: new Set(devices.map((d) => d.deviceId)), ok: new Set(), fail: new Set() };
   for (const d of devices) {
     const probe = makeProbe({ target: d.deviceId });
@@ -150,8 +150,8 @@ function updatePreflight() {
   if (!preflight) return;
   const done = preflight.ok.size + preflight.fail.size;
   if (done < preflight.need.size) { setPreflight(`Checking… ${done}/${preflight.need.size}`, 'var(--accent)'); return; }
-  if (preflight.fail.size === 0) setPreflight(`✓ All ${preflight.ok.size} rooms responding`, 'var(--play)');
-  else setPreflight(`✗ ${preflight.fail.size} room(s) not responding — fix before bed`, 'var(--danger)');
+  if (preflight.fail.size === 0) setPreflight(`✓ All ${preflight.ok.size} rooms responding`, 'var(--play-text)');
+  else setPreflight(`✗ ${preflight.fail.size} room(s) not responding — fix before bed`, 'var(--danger-text)');
   preflight = null;
 }
 function setPreflight(text, color) { const el = $('preflightResult'); el.textContent = text; el.style.color = color; }
