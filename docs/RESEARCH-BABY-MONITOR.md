@@ -1,8 +1,13 @@
 # mesh-playback — Baby-monitor ("radio-nanny") mode: feasibility report
 
 > Output of an iOS-web / WebRTC feasibility exploration, cited to WebKit bug trackers and the W3C
-> Audio Session API. "mic" = the nursery device's microphone. This is analysis for a future
-> milestone (maps to DESIGN §12 / M8); nothing is implemented.
+> Audio Session API. "mic" = the nursery device's microphone.
+>
+> **Status: M8a ("cry meter") is IMPLEMENTED** — opt-in mic loudness telemetry (`web/player/monitor.js`
+> → `micLevel` on the report) with a controller meter + "possible crying" alarm. Its plumbing is
+> e2e-tested with a fake mic; the **on-device behavior below (session flip, self-noise cancellation,
+> lock-mute) still needs a real-hardware pass (§M8-S0)** and the thresholds tuning. M8b/c (attended
+> WebRTC listen/talk, video peek) remain analysis for the future.
 
 ## 0. The make-or-break finding, stated first
 

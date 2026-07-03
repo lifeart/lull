@@ -16,7 +16,7 @@ Full rationale + the verified iOS constraints are in [`DESIGN.md`](DESIGN.md). R
 ## 2. Status
 **MVP complete, tested, and hardened through five adversarial review rounds** (27 → 32 → 13 → 5 →
 a 21-finding production-readiness audit, all fixed), plus feature + native-UI rounds. **86 node
-tests + 21 real-browser Playwright tests, all green.** The container deploy path is verified
+tests + 22 real-browser Playwright tests, all green.** The container deploy path is verified
 end-to-end (builds, boots as a non-root user, serves both PWAs + Range/206, fail-closed auth,
 graceful-shutdown state flush, volume persistence across restart). Not yet run on real iOS hardware end-to-end — see the honest
 limits (§7) and the overnight-test gate.
@@ -61,7 +61,7 @@ npm run bake                      # generate seamless white/pink/brown loops + P
 npm start                         # hub on http://localhost:8080  (localhost is a secure context)
 npm test                          # 86 node tests
 npx playwright install chromium   # once
-npm run test:e2e                  # 21 real-browser tests
+npm run test:e2e                  # 22 real-browser tests
 npm run fetch:ambient             # (optional) download curated CC0/PD ambient loops — see below
 ```
 - **Dev:** open `http://localhost:8080/controller/` and `/player/` in two tabs.
@@ -188,6 +188,11 @@ comprehensive node + Playwright tests.
   heartbeat — generated procedurally in `pipeline/bake.js` (zero-dep, no license, offline), tagged
   `kind:'ambient'`. Optional real-recording **download** path (`npm run fetch:ambient`) is scaffolded and,
   for personal use, license-relaxed; see §9.
+- **Baby monitor — "cry meter" (M8a):** opt-in on the speaker (from the arm gesture), a Web Audio
+  AnalyserNode on the mic reports a 0..1 room-loudness `micLevel` over the existing report path; the
+  controller shows a live meter and a "👶 possible crying" alarm on a sustained spike (auto-clears on
+  quiet). Plumbing verified headlessly with a fake mic — **the on-device behavior (iOS audio-session
+  flip, self-noise cancellation, lock-mute) still needs a real-hardware pass** (RESEARCH-BABY-MONITOR §M8-S0).
 - **Native iOS mobile layout:** sticky blurred nav bar, the local player as a Now-Playing hero, UIKit
   press physics, grouped-card rhythm, safe areas, momentum scroll (CSS/HTML only; all tested contracts
   intact). Prior **Apple-HIG WCAG-AA** color/contrast/44pt pass still in force.
@@ -196,9 +201,11 @@ comprehensive node + Playwright tests.
 - **Real-device overnight test** (the make-or-break unknown) — set the true tier boundaries. The
   container deploy path itself is now verified (build/boot/serve/persist/shutdown); what remains
   unproven is on-device background/lock behavior over a real night.
-- **Baby-monitor (M8a "cry meter")** — the researched next feature, but genuinely gated on an on-device
-  spike first (mic capture flips the iOS audio session; behavior varies by device — see
-  [`RESEARCH-BABY-MONITOR.md`](RESEARCH-BABY-MONITOR.md) §M8-S0). Build after measuring on real hardware.
+- **Validate the baby monitor (M8a) on real hardware** — the cry-meter is BUILT (opt-in, meter + alarm)
+  and its plumbing is tested, but mic capture flips the iOS audio session and mutes on lock; measure the
+  real behavior per [`RESEARCH-BABY-MONITOR.md`](RESEARCH-BABY-MONITOR.md) §M8-S0 before relying on it,
+  and tune the CRY_ON/CRY_OFF thresholds + level normalization to a real room. M8b/c (attended WebRTC
+  listen/talk, video peek) remain future.
 - **Optional real-recording ambient pack** — the synthesized loops already ship; if you want field
   recordings, `npm run fetch:ambient` is scaffolded (fill `url`/`sha256`, set `"cleared": true`, needs
   ffmpeg; license-relaxed for personal use). Rules in [`RESEARCH-AMBIENT-SOUNDS.md`](RESEARCH-AMBIENT-SOUNDS.md).
