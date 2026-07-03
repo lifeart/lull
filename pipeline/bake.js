@@ -153,35 +153,52 @@ function ocean(n, loopN) { // three whole-cycle swells (seamless) + asymmetric c
   }
   return out;
 }
-function wind(n, loopN) { // parallel resonant band-passes + windspeed LFO + stochastic gusts (§4)
+function wind(n, loopN) { // soft broadband RUSH that swells + brightens with gusts (no eerie howl)
   const out = new Float32Array(n);
-  const r1 = makeSVF(), r2 = makeSVF(), r3 = makeSVF();
-  let gustLp = 0;
+  // Constant high-Q resonances read as an artificial "whistle/howl". Wind that soothes is a broadband
+  // rush whose LEVEL and BRIGHTNESS ride the gusts: brown noise low-passed, cutoff opening on a gust,
+  // with an airy "ssh" layer that only appears on the strong gusts.
+  const airHP = biquad('hp', 2000, 0.7), airLP = biquad('lp', 7000, 0.7);
+  let brownState = 0, lp = 0, gustSlow = 0, gustFast = 0;
   for (let i = 0; i < n; i++) {
     const p = (i % loopN) / loopN;
-    const speed = 0.4 + 0.6 * (0.5 - 0.5 * Math.cos(2 * Math.PI * 2 * p)); // 2 whole cycles → seamless
-    gustLp = gustLp * 0.9997 + rnd() * 0.0003; // slow random gusts
-    const gust = Math.max(0, Math.min(1, 0.5 + gustLp * 9));
-    const cmod = 1 + 0.4 * (gust - 0.5); // gusts nudge resonance centers ±
-    const src = rnd(), amp = speed * (0.35 + 0.65 * gust);
-    const b1 = r1(src, 200 * cmod, 0.05), b2 = r2(src, 400 * cmod, 0.05), b3 = r3(src, 800 * cmod, 0.9);
-    out[i] = (b1 * 1.0 + b2 * 0.8 + b3 * 0.35) * amp;
+    gustSlow = gustSlow * 0.99985 + rnd() * 0.00015; // long, lazy gust envelope
+    gustFast = gustFast * 0.9995 + rnd() * 0.0005;    // shorter flutter riding on top
+    const base = 0.5 - 0.5 * Math.cos(2 * Math.PI * 3 * p); // 3 whole cycles → seamless base swell
+    let gust = 0.3 + 0.35 * base + gustSlow * 11 + gustFast * 4;
+    gust = Math.max(0.05, Math.min(1, gust));
+    brownState = (brownState + 0.02 * rnd()) / 1.02;
+    const cut = 0.012 + 0.06 * gust;                  // low-pass opens with the gust → it brightens
+    lp = lp * (1 - cut) + brownState * 3.5 * cut;
+    const air = airLP(airHP(rnd())) * Math.max(0, gust - 0.55) * 0.7; // airy top only on strong gusts
+    out[i] = lp * gust * 1.9 + air;
   }
   return out;
 }
-function fire(n) { // lapping bed (soft-clipped) + Poisson crackle + breathing hiss (§4)
+function fire(n, loopN) { // warm low-mid ROAR that flares + irregular CLUSTERED crackle + faint hiss
   const out = new Float32Array(n);
-  const bedBP = biquad('bp', 30, 5), bedHP = biquad('hp', 25, 0.7), hissHP = biquad('hp', 1000, 0.7);
-  let hissEnv = 0.3;
+  // A 30 Hz band is near-subsonic (inaudible on phones, a hum on good speakers) and uniform crackle
+  // sounds mechanical. Real fire = a warm ~60–620 Hz roar that flares, plus crackle in irregular
+  // BURSTS (snap … snap-snap-snap … snap), not evenly spaced pops.
+  const bedLP = biquad('lp', 620, 0.7), bedHP = biquad('hp', 60, 0.7), hissHP = biquad('hp', 2600, 0.7);
+  let brownState = 0, flare = 0, hissEnv = 0.3;
   for (let i = 0; i < n; i++) {
-    let bed = bedHP(bedBP(rnd()) * 12);
-    bed = Math.tanh(bed * 1.5) * 0.55;                                  // harmonic warmth on small speakers
-    const breath = 0.3 + 0.7 * Math.abs(Math.sin((2 * Math.PI * i) / SR)); // ~1 Hz breathing
-    hissEnv += (breath - hissEnv) * 0.0002;
-    out[i] = bed + hissHP(rnd()) * hissEnv * 0.14;
+    const p = (i % loopN) / loopN;
+    brownState = (brownState + 0.02 * rnd()) / 1.02;
+    flare = flare * 0.9997 + rnd() * 0.0003; // slow random flaring
+    const breath = 0.55 + 0.35 * (0.5 - 0.5 * Math.cos(2 * Math.PI * 2 * p)) + flare * 7;
+    let bed = bedHP(bedLP(brownState * 3.5)) * Math.max(0.3, Math.min(1.3, breath));
+    bed = Math.tanh(bed * 1.3) * 0.5; // gentle harmonic warmth
+    hissEnv += ((0.3 + 0.7 * Math.abs(Math.sin((2 * Math.PI * i) / SR))) - hissEnv) * 0.0002;
+    out[i] = bed + hissHP(rnd()) * hissEnv * 0.09;
   }
-  for (const ev of poissonEvents(n, 32)) // crackle: short broadband pops, amplitude jittered
-    addSplat(out, ev, 1200 + Math.random() * 1400, 0.005 + Math.random() * 0.012, 0.08 + Math.random() * 0.32);
+  for (const ev of poissonEvents(n, 12)) // baseline sparse ticks
+    addSplat(out, ev, 900 + Math.random() * 1500, 0.004 + Math.random() * 0.01, 0.04 + Math.random() * 0.12);
+  for (const cl of poissonEvents(n, 1.8)) { // crackle CLUSTERS: a flurry of pops within ~280 ms
+    const count = 3 + Math.floor(Math.random() * 5);
+    for (let k = 0; k < count; k++)
+      addSplat(out, cl + Math.floor(Math.random() * 0.28 * SR), 1000 + Math.random() * 1700, 0.005 + Math.random() * 0.012, 0.1 + Math.random() * 0.32);
+  }
   return out;
 }
 function fan(n, loopN) { // low-passed motor rumble + faint blade-pass tone + comb slap (§4)
