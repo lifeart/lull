@@ -58,6 +58,48 @@ function encodeWavPCM16(x) {
   for (let i = 0; i < n; i++) { const s = Math.max(-1, Math.min(1, x[i])); buf.writeInt16LE((s * 32767) | 0, 44 + i * 2); }
   return buf;
 }
+// Loudness match to the SAME target the baker uses, measured with the SAME BS.1770 impl — single-pass
+// ffmpeg loudnorm undershoots by ~3–4 LU on these, which would make the recordings play noticeably
+// quieter than the synthesized/noise sounds. Measure the final loop and trim to -16 LUFS (peak-capped).
+const TARGET_LUFS = -16, PEAK_CEIL = 0.8;
+function biquad(type, f0, Q, gainDb = 0) {
+  const w0 = 2 * Math.PI * f0 / SR, c = Math.cos(w0), s = Math.sin(w0), alpha = s / (2 * Q);
+  const A = Math.pow(10, gainDb / 40), sq = 2 * Math.sqrt(A) * alpha;
+  let b0, b1, b2, a0, a1, a2;
+  if (type === 'hp') { b0 = (1 + c) / 2; b1 = -(1 + c); b2 = (1 + c) / 2; a0 = 1 + alpha; a1 = -2 * c; a2 = 1 - alpha; }
+  else { b0 = A * ((A + 1) + (A - 1) * c + sq); b1 = -2 * A * ((A - 1) + (A + 1) * c); b2 = A * ((A + 1) + (A - 1) * c - sq); a0 = (A + 1) - (A - 1) * c + sq; a1 = 2 * ((A - 1) - (A + 1) * c); a2 = (A + 1) - (A - 1) * c - sq; }
+  const nb0 = b0 / a0, nb1 = b1 / a0, nb2 = b2 / a0, na1 = a1 / a0, na2 = a2 / a0;
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  return (x) => { const y = nb0 * x + nb1 * x1 + nb2 * x2 - na1 * y1 - na2 * y2; x2 = x1; x1 = x; y2 = y1; y1 = y; return y; };
+}
+function integratedLUFS(x) {
+  const s1 = biquad('highshelf', 1500, 0.7071, 4), s2 = biquad('hp', 38, 0.5);
+  const z = new Float32Array(x.length);
+  for (let i = 0; i < x.length; i++) { const y = s2(s1(x[i])); z[i] = y * y; }
+  const block = Math.round(0.4 * SR), step = Math.round(0.1 * SR), blocks = [];
+  for (let st = 0; st + block <= z.length; st += step) { let s = 0; for (let i = 0; i < block; i++) s += z[st + i]; blocks.push(s / block); }
+  if (!blocks.length) { let s = 0; for (let i = 0; i < z.length; i++) s += z[i]; blocks.push(s / z.length); }
+  const L = (ms) => -0.691 + 10 * Math.log10(ms + 1e-12);
+  let kept = blocks.filter((ms) => L(ms) >= -70); if (!kept.length) kept = blocks;
+  const rel = L(kept.reduce((a, b) => a + b, 0) / kept.length) - 10;
+  let kept2 = kept.filter((ms) => L(ms) >= rel); if (!kept2.length) kept2 = kept;
+  return L(kept2.reduce((a, b) => a + b, 0) / kept2.length);
+}
+function normalizeLoudness(x) {
+  // 1) scale toward target.
+  let scale = Math.pow(10, (TARGET_LUFS - integratedLUFS(x)) / 20);
+  for (let i = 0; i < x.length; i++) x[i] *= scale;
+  // 2) soft-knee limit (same as the baker) — nature recordings are peaky (raindrops, crackles, wave
+  //    crashes); without this a plain peak-cap leaves them several LU quiet. Round peaks above the knee.
+  const knee = PEAK_CEIL * 0.55, span = PEAK_CEIL - knee;
+  for (let i = 0; i < x.length; i++) { const a = Math.abs(x[i]); if (a > knee) x[i] = Math.sign(x[i]) * (knee + span * Math.tanh((a - knee) / span)); }
+  // 3) re-match to target after limiting, hard peak ceiling as the backstop.
+  scale = Math.pow(10, (TARGET_LUFS - integratedLUFS(x)) / 20);
+  let peak = 0; for (let i = 0; i < x.length; i++) peak = Math.max(peak, Math.abs(x[i] * scale));
+  if (peak > PEAK_CEIL) scale *= PEAK_CEIL / peak;
+  for (let i = 0; i < x.length; i++) x[i] *= scale;
+  return x;
+}
 function crossfadeLoop(x, loopN, cfN) {
   if (x.length < loopN + cfN) throw new Error(`segment too short: ${x.length} < ${loopN + cfN}`);
   const out = new Float32Array(loopN);
@@ -76,8 +118,8 @@ async function main() {
     try {
       execSync(`curl -sL --fail --max-time 180 -o "${src}" "${s.url}"`, { stdio: ['ignore', 'ignore', 'inherit'] });
       const grab = s.loopSec + s.cfSec + 1; // a little extra so the crossfade always has tail samples
-      execSync(`ffmpeg -y -ss ${s.start} -t ${grab} -i "${src}" -ac 1 -ar ${SR} -af "loudnorm=I=-16:TP=-1.5:LRA=11" -c:a pcm_s16le "${seg}"`, { stdio: ['ignore', 'ignore', 'ignore'] });
-      const loop = crossfadeLoop(readWavPcm16(seg), Math.round(s.loopSec * SR), Math.round(s.cfSec * SR));
+      execSync(`ffmpeg -y -ss ${s.start} -t ${grab} -i "${src}" -ac 1 -ar ${SR} -c:a pcm_s16le "${seg}"`, { stdio: ['ignore', 'ignore', 'ignore'] });
+      const loop = normalizeLoudness(crossfadeLoop(readWavPcm16(seg), Math.round(s.loopSec * SR), Math.round(s.cfSec * SR))); // -16 LUFS, same as the baker
       const wav = encodeWavPCM16(loop);
       writeFileSync(path.join(REAL, `${s.id}.wav`), wav);
       copyFileSync(path.join(REAL, `${s.id}.wav`), path.join(ASSETS, `${s.id}.wav`)); // overlay now
