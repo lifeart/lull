@@ -57,6 +57,30 @@ function scheduleReconnect() {
 }
 function send(obj) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); }
 
+// --- remembered per-room sleep timer (P1) ---------------------------------------------------------
+// Volume + soundscape already persist in `desired`; the sleep timer is the one nightly setting the
+// system forgets (STOP wipes endsAtEpochMs). Remember the last-chosen timer per device (controller-
+// local) so a plain Start re-applies it, and offer a wall-clock "until 7:00" option. All timers ride
+// the existing durationMs path (the hub rebases to its own clock and owns the absolute deadline).
+const rememberedTimerKey = (deviceId) => { try { return localStorage.getItem('mp.timer.' + deviceId) || null; } catch { return null; } };
+const setRememberedTimerKey = (deviceId, key) => { try { key ? localStorage.setItem('mp.timer.' + deviceId, key) : localStorage.removeItem('mp.timer.' + deviceId); } catch (e) { console.warn('timer prefs blocked', e); } };
+function nextWakeEpochMs(hour) {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0, 0);
+  if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1); // already past today → tomorrow
+  return d.getTime();
+}
+const MIN_TIMER = { '15m': 15, '30m': 30, '45m': 45, '60m': 60 };
+function timerFieldsForKey(key) {
+  if (key && MIN_TIMER[key]) return { durationMs: MIN_TIMER[key] * 60000 };
+  if (key === 'wake') return { durationMs: Math.max(0, nextWakeEpochMs(7) - Date.now()) };
+  return null; // 'off' or unset → no sleep timer
+}
+function startDevice(deviceId) {
+  const f = timerFieldsForKey(rememberedTimerKey(deviceId));
+  sendCommand(deviceId, f ? { verb: VERBS.START, ...f } : { verb: VERBS.START });
+}
+
 function onMessage(msg) {
   switch (msg.t) {
     // WELCOME is the authoritative resync on every (re)connect. Seed the alarm baseline from it
@@ -146,6 +170,29 @@ function runPreflight() {
   }
   setPreflight('Checking all rooms…', 'var(--accent)');
 }
+// --- one-tap Bedtime scene (P2) -------------------------------------------------------------------
+// Start every online room that isn't already playing, each with its remembered sleep timer (P1), in
+// one tap. No new verbs; per-room verification + alarm rides the existing start-intent ACK (a room
+// that can't reach PLAYING NACKs → the parent is alarmed). Max one command per device (≤ MAX_DEVICES),
+// well under the socket rate-limit burst, so no stagger is needed.
+function runBedtime() {
+  primeAlarm();
+  if (!devices.length) { setPreflight('No rooms yet — arm a Speaker first.', 'var(--danger-text)'); return; }
+  const online = devices.filter((d) => d.online);
+  if (!online.length) { setPreflight('No rooms online — check the speakers before bed.', 'var(--danger-text)'); return; }
+  let started = 0, already = 0;
+  for (const d of online) {
+    if ((d.reported || {}).state === STATES.PLAYING) { already++; continue; }
+    startDevice(d.deviceId); // carries the remembered timer; ACK-failure alarms the parent
+    started++;
+  }
+  const offline = devices.length - online.length;
+  const parts = [`Started ${started}`];
+  if (already) parts.push(`${already} already playing`);
+  if (offline) parts.push(`${offline} offline`);
+  setPreflight('🌙 ' + parts.join(' · '), offline ? 'var(--warn)' : 'var(--play-text)');
+}
+
 function updatePreflight() {
   if (!preflight) return;
   const done = preflight.ok.size + preflight.fail.size;
@@ -203,10 +250,10 @@ function makeCard(deviceId, tier, caps) {
     dot: el.querySelector('.dot'), dname: el.querySelector('.dname'), badge: el.querySelector('.badge'),
     chip: el.querySelector('.statechip'), eq: el.querySelector('.eq'), rem: el.querySelector('.rem'),
     start: el.querySelector('.go'), stop: el.querySelector('.btn-danger'), lock: el.querySelector('.lockline'),
-    forget: el.querySelector('.forget'), soundChips: new Map(), slider: null, setFill: null,
+    forget: el.querySelector('.forget'), soundChips: new Map(), timerChips: new Map(), slider: null, setFill: null,
   };
 
-  refs.start.addEventListener('click', () => sendCommand(deviceId, { verb: VERBS.START }));
+  refs.start.addEventListener('click', () => startDevice(deviceId)); // carries the remembered timer (P1)
   refs.stop.addEventListener('click', () => sendCommand(deviceId, { verb: VERBS.STOP }));
 
   // Forget an offline (ghost) device: two-tap confirm, no blocking dialog. Clears a stale
@@ -221,10 +268,23 @@ function makeCard(deviceId, tier, caps) {
   });
 
   const timers = el.querySelector('.timers');
-  for (const min of [15, 30, 45, 60]) {
-    timers.append(chipBtn(`${min}m`, () => sendCommand(deviceId, { verb: VERBS.SET_TIMER, durationMs: min * 60000 })));
+  const addTimer = (key, label, fields) => {
+    const b = chipBtn(label, () => {
+      setRememberedTimerKey(deviceId, key === 'off' ? null : key); // remember the choice (P1)
+      sendCommand(deviceId, { verb: VERBS.SET_TIMER, ...fields() });
+      paintTimerChips();
+    });
+    refs.timerChips.set(key, b);
+    timers.append(b);
+  };
+  for (const min of [15, 30, 45, 60]) addTimer(`${min}m`, `${min}m`, () => ({ durationMs: min * 60000 }));
+  addTimer('wake', '☾ 7:00', () => ({ durationMs: Math.max(0, nextWakeEpochMs(7) - Date.now()) }));
+  addTimer('off', 'off', () => ({ endsAtEpochMs: null }));
+  function paintTimerChips() {
+    const k = rememberedTimerKey(deviceId);
+    for (const [key, b] of refs.timerChips) b.setAttribute('aria-pressed', String(key === k));
   }
-  timers.append(chipBtn('off', () => sendCommand(deviceId, { verb: VERBS.SET_TIMER, endsAtEpochMs: null })));
+  paintTimerChips();
 
   if (soundscapes.length > 1) {
     const sound = el.querySelector('.sound');
@@ -288,6 +348,7 @@ function makeCard(deviceId, tier, caps) {
     refs.start.disabled = rep.state === STATES.PLAYING;
     const active = rep.soundscape || (d.desired && d.desired.soundscape);
     for (const [id, b] of refs.soundChips) b.setAttribute('aria-pressed', String(active === id));
+    paintTimerChips(); // reflect the remembered sleep-timer choice (P1)
     // Seed the slider from the DESIRED gain (what Start will use), but never fight the user.
     if (refs.slider && document.activeElement !== refs.slider && !dragging.has(deviceId)) {
       refs.slider.value = String((d.desired && d.desired.gainLinear) ?? rep.gainLinear ?? 0.3);
@@ -517,6 +578,7 @@ function rebuildAllCards() {
 }
 
 // --- boot ---
+$('bedtimeBtn').addEventListener('click', runBedtime);
 $('preflightBtn').addEventListener('click', runPreflight);
 $('alarmDismiss').addEventListener('click', clearAlarm);
 $('addSoundBtn').addEventListener('click', () => $('fileInput').click());

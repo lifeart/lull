@@ -328,3 +328,51 @@ test('forget: an offline (ghost) device can be removed from the controller (find
   await expect(card).toHaveCount(0, { timeout: 10000 }); // card disappears
   await ctx.close();
 });
+
+test('remembered per-room sleep timer: Start re-applies the last-chosen timer (P1)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'NurseryTimer');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const card = c.locator('.card', { hasText: 'NurseryTimer' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  const rem = card.locator('.rem');
+
+  // Pick 15m → the device starts with a ~15:00 timer, and the chip is remembered (pressed).
+  await card.getByRole('button', { name: '15m' }).click();
+  await expect(rem).toHaveText(/1[45]:\d\d/, { timeout: 10000 });
+  await expect(card.getByRole('button', { name: '15m' })).toHaveAttribute('aria-pressed', 'true');
+
+  // Stop wipes the timer…
+  await card.getByRole('button', { name: '■ Stop' }).click();
+  await expect(rem).toHaveText('—', { timeout: 10000 });
+
+  // …but a plain Start re-applies the remembered 15m — the P1 win.
+  await card.getByRole('button', { name: /Start/ }).click();
+  await expect(rem).toHaveText(/1[45]:\d\d/, { timeout: 10000 });
+  await ctx.close();
+});
+
+test('Bedtime scene: one tap starts every online room (P2)', async ({ browser }) => {
+  // Separate contexts = separate localStorage = two genuinely distinct online devices.
+  const ctxA = await browser.newContext();
+  const ctxB = await browser.newContext();
+  const ctxC = await browser.newContext();
+  const a = await ctxA.newPage();
+  const b = await ctxB.newPage();
+  await armPlayer(a, 'BedRoomA');
+  await armPlayer(b, 'BedRoomB');
+
+  const c = await ctxC.newPage();
+  await c.goto('/controller/');
+  await expect(c.locator('.card', { hasText: 'BedRoomA' })).toBeVisible({ timeout: 10000 });
+  await expect(c.locator('.card', { hasText: 'BedRoomB' })).toBeVisible({ timeout: 10000 });
+
+  await c.getByRole('button', { name: /Start bedtime/ }).click();
+  await expect(a.locator('#stateLine')).toContainText('Playing', { timeout: 10000 });
+  await expect(b.locator('#stateLine')).toContainText('Playing', { timeout: 10000 });
+  await expect(c.locator('#preflightResult')).toContainText(/Started/i, { timeout: 10000 });
+  await ctxA.close(); await ctxB.close(); await ctxC.close();
+});
