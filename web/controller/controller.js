@@ -19,7 +19,7 @@ let devices = [];
 let reconnectDelay = RECONNECT_BASE_MS;
 const pending = new Map(); // cmdId -> { deviceId, timer, kind }
 let preflight = null; // { need:Set, ok:Set, fail:Set }
-let soundscapes = [{ id: 'white', label: 'White' }];
+let soundscapes = [{ id: 'pink', label: 'Pink noise' }]; // bootstrap = the default; replaced once the library loads
 
 const cards = new Map(); // deviceId -> { el, update }
 const lastState = new Map(); // deviceId -> { online, state } for spontaneous-failure alarms
@@ -647,21 +647,21 @@ async function uploadFile(file) {
 let libraryBusy = false;
 let pendingLibraryRefresh = false;
 let refreshRetry = null;
+let refreshRetries = 0;
+const REFRESH_RETRY_CAP = 25; // ~10s of self-heal polling, then give up (release still flushes it)
+// Re-arm the deferred-refresh poll, but only up to the cap — an ABANDONED rename/volume-drag must
+// not wake the phone every 400ms forever. The definitive flush still happens on release (setBusy /
+// the drag's change handler), so capping only bounds the background polling, never loses a refresh.
+function armRefreshRetry() { clearTimeout(refreshRetry); if (refreshRetries++ < REFRESH_RETRY_CAP) refreshRetry = setTimeout(flushLibraryRefresh, 400); }
 async function refreshLibrary() {
-  if (libraryBusy || dragging.size) {
-    // An interaction is in progress — defer, but SELF-HEAL: keep re-checking so the refresh always
-    // lands once the interaction releases, even if no explicit flush call fires.
-    pendingLibraryRefresh = true;
-    clearTimeout(refreshRetry); refreshRetry = setTimeout(flushLibraryRefresh, 400);
-    return;
-  }
-  pendingLibraryRefresh = false;
+  if (libraryBusy || dragging.size) { pendingLibraryRefresh = true; armRefreshRetry(); return; }
+  pendingLibraryRefresh = false; refreshRetries = 0;
   await loadSoundscapes();
   rebuildAllCards();
 }
 function flushLibraryRefresh() {
   if (!pendingLibraryRefresh) return;
-  if (libraryBusy || dragging.size) { clearTimeout(refreshRetry); refreshRetry = setTimeout(flushLibraryRefresh, 400); return; }
+  if (libraryBusy || dragging.size) { armRefreshRetry(); return; }
   refreshLibrary();
 }
 // Route every libraryBusy change through this so RELEASING an interaction always applies a refresh
@@ -685,7 +685,7 @@ const localState = {
   engine: null, armed: false, tier: null, controls: null, refs: {},
   desired: { verb: VERBS.STOP, gainLinear: GAIN_DEFAULT, soundscape: SOUNDSCAPE_DEFAULT, endsAtEpochMs: null },
 };
-const localUrlFor = (id) => { const s = soundscapes.find((x) => x.id === id); return (s && s.url) || '/player/assets/white.wav'; };
+const localUrlFor = (id) => { const s = soundscapes.find((x) => x.id === id); return (s && s.url) || '/player/assets/pink.wav'; };
 const localPlaying = () => !!localState.engine && localState.engine.getState() === STATES.PLAYING;
 async function localRealize() {
   if (!localState.engine) return;
@@ -702,8 +702,8 @@ async function localArm() {
     localState.armed = true; return true;
   } catch (e) { localState.engine = null; localState.armed = false; console.warn('local arm failed', e); return false; }
 }
-async function localPlay() { primeAlarm(); if (!(await localArm())) { renderLocal(); return; } localState.desired = { ...localState.desired, verb: VERBS.START }; await localRealize(); renderLocal(); }
-async function localStop() { localState.desired = { ...localState.desired, verb: VERBS.STOP, endsAtEpochMs: null }; await localRealize(); renderLocal(); }
+async function localPlay() { primeAlarm(); localState.fading = false; if (!(await localArm())) { renderLocal(); return; } localState.desired = { ...localState.desired, verb: VERBS.START }; await localRealize(); renderLocal(); }
+async function localStop() { localState.fading = false; localState.desired = { ...localState.desired, verb: VERBS.STOP, endsAtEpochMs: null }; await localRealize(); renderLocal(); }
 async function localToggle() { if (localPlaying()) await localStop(); else await localPlay(); }
 async function localSetSound(id) { localState.desired = { ...localState.desired, soundscape: id }; if (localState.armed) await localRealize(); renderLocal(); }
 function localSetGain(g) { localState.desired = { ...localState.desired, gainLinear: g }; if (localState.armed) localRealize(); }
@@ -782,8 +782,9 @@ function renderLocal() {
   const playing = st === STATES.PLAYING;
   r.tier.textContent = localState.tier || '';
   r.tier.hidden = !localState.tier;
+  if (st === STATES.STOPPED) localState.fading = false; // the timer fade finished
   r.eq.hidden = !playing;
-  r.state.textContent = !localState.armed ? '' : playing ? 'playing' : st === STATES.REQUIRES_GESTURE ? 'tap to resume' : st === STATES.ERROR ? 'error' : 'stopped';
+  r.state.textContent = !localState.armed ? '' : localState.fading ? 'winding down…' : playing ? 'playing' : st === STATES.REQUIRES_GESTURE ? 'tap to resume' : st === STATES.ERROR ? 'error' : 'stopped';
   r.state.className = 'statechip local-state' + (playing ? ' playing' : (st === STATES.ERROR || st === STATES.REQUIRES_GESTURE) ? ' bad' : '');
   r.play.textContent = playing ? '⏸ Pause' : '▶ Play here';
   const sound = localState.desired.soundscape;
@@ -802,6 +803,7 @@ setInterval(() => {
   const d = localState.desired;
   if (localState.armed && d.verb === VERBS.START && d.endsAtEpochMs && Date.now() >= d.endsAtEpochMs) {
     localState.desired = { ...d, verb: VERBS.STOP, endsAtEpochMs: null };
+    localState.fading = true; // shown as "winding down…" until the engine reaches STOPPED
     localState.engine.fadeOutAndStop(8); // gentle wind-down (this player is always on-screen)
     renderLocal();
   }
