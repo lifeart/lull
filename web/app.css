@@ -355,6 +355,31 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 /* Empty state — centered guidance, placeholder outline instead of a bare paragraph */
 #empty { text-align: center; padding: var(--s6) var(--s4); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }
 
+/* Controller information architecture (bedtime-first). Top → bottom mirrors how often a parent
+ * touches each surface: the nightly zone (Bedtime scene + room cards) leads, "this phone" is the
+ * secondary player, and the sound library sits last under MANAGE. Order is plain DOM order.
+ *
+ * #addRoomCard trades its card chrome for an iOS grouped-list SECTION HEADER row ("ROOMS" + the
+ * ghost add button) sitting directly above the room list — the add affordance lives with the list
+ * it adds to (Home-app pattern), and the empty state's "tap Add a room above" points one row up.
+ * The expandable setup panel inherits the card treatment instead. */
+#addRoomCard { background: none; box-shadow: none; border: 0; border-radius: 0; padding: 0 2px; margin-top: var(--s6); animation: none; }
+#addRoomCard h2 { font-size: 0.8125rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+#addRoomPanel { background: var(--surface); border-radius: var(--radius-lg); padding: var(--pad); box-shadow: var(--shadow); margin-top: var(--s2); }
+@media (prefers-color-scheme: dark) { #addRoomPanel { box-shadow: none; border: 0.5px solid var(--border); } }
+/* "This phone" + MANAGE open new sections after the rooms list (no .card + .card adjacency there). */
+#localPlayer { margin-top: var(--s6); }
+.wrap > .sec-label { margin-top: var(--s6); }
+
+/* First run (no rooms yet): the all-rooms scene can't do anything, so it recedes and the
+ * Add-a-room path leads — and the add button steps up from ghost to a filled CTA. Guarded :has();
+ * older engines simply keep today's always-visible layout. */
+@supports selector(:has(*)) {
+  .wrap:has(> #empty:not([hidden])) .bedtime { display: none; }
+  .wrap:has(> #empty:not([hidden])) #addRoomCard { margin-top: var(--s2); }
+  .wrap:has(> #empty:not([hidden])) #addRoomBtn { background: var(--accent-fill); color: #fff; }
+}
+
 /* Player (Speaker) screens — iOS-onboarding rhythm: large title outside, controls grouped on a
  * card, the "armed" status reading like a lock-screen now-playing summary. */
 #setup { padding-top: var(--s4); }

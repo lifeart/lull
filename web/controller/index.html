@@ -29,26 +29,16 @@
   </header>
 
   <main class="wrap">
-    <section class="card local" id="localPlayer"></section>
-
-    <div class="card">
+    <!-- 1 · Tonight (the nightly job): one-tap scene + status check. Hidden while there are no
+         rooms (guarded :has() in app.css) so first-run leads with "Add a room" instead. -->
+    <div class="card bedtime">
       <button id="bedtimeBtn" class="btn btn-play block big">🌙 Start bedtime — all rooms</button>
       <button id="preflightBtn" class="btn btn-ghost block" style="margin-top:10px">Check all rooms</button>
       <p id="preflightResult" class="muted" aria-live="polite" style="margin:12px 0 0; text-align:center; min-height:1.2em"></p>
     </div>
 
-    <div class="card" id="soundsCard">
-      <div class="row">
-        <h2>Sounds</h2>
-        <span class="spacer"></span>
-        <button id="addSoundBtn" class="btn btn-ghost" style="min-height:44px; padding:0 14px">＋ Add sound</button>
-      </div>
-      <p class="faint" style="margin:6px 0 0">White / pink / brown are built in. Drop a file here, or tap “Add sound”, to add your own (lullaby, recording) — under 30 MB.</p>
-      <div id="uploadList" class="sec"></div>
-      <p id="uploadStatus" class="muted" aria-live="polite" style="margin:8px 0 0" hidden></p>
-      <input id="fileInput" type="file" accept="audio/*" hidden />
-    </div>
-
+    <!-- 2 · Rooms: section header (with the add affordance, iOS list-header style — the empty
+         state below points at it), then the room cards. -->
     <div class="card" id="addRoomCard">
       <div class="row">
         <h2>Rooms</h2>
@@ -63,10 +53,27 @@
       </div>
     </div>
 
-    <p id="empty" class="muted" hidden style="margin-top:16px">
+    <p id="empty" class="muted" hidden style="margin-top:12px">
       No devices yet. Tap “＋ Add a room” above, or open the Speaker page on the old device and arm it.
     </p>
     <div id="devices" class="stack" style="margin-top:12px"></div>
+
+    <!-- 3 · This phone (sometimes): play on the parent's own device instead of a room speaker. -->
+    <section class="card local" id="localPlayer"></section>
+
+    <!-- 4 · Manage (rarely): the shared sound library — rename / delete / reorder / favorite. -->
+    <p class="sec-label">Manage</p>
+    <div class="card" id="soundsCard">
+      <div class="row">
+        <h2>Sounds</h2>
+        <span class="spacer"></span>
+        <button id="addSoundBtn" class="btn btn-ghost" style="min-height:44px; padding:0 14px">＋ Add sound</button>
+      </div>
+      <p class="faint" style="margin:6px 0 0">White / pink / brown are built in. Drop a file here, or tap “Add sound”, to add your own (lullaby, recording) — under 30 MB.</p>
+      <div id="uploadList" class="sec"></div>
+      <p id="uploadStatus" class="muted" aria-live="polite" style="margin:8px 0 0" hidden></p>
+      <input id="fileInput" type="file" accept="audio/*" hidden />
+    </div>
   </main>
 
   <script type="module" src="controller.js"></script>
