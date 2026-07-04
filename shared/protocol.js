@@ -50,7 +50,7 @@ export const STATES = Object.freeze({
 
 // Capability tiers (see docs/DESIGN.md §1.7). Detected from feature presence, never version-sniffed.
 export const TIERS = Object.freeze({
-  LEGACY: 'LEGACY', // iOS 12–15.3-ish: always-audible loop, fixed volume, start/stop + timer
+  LEGACY: 'LEGACY', // iOS 10.3–15.3-ish: always-audible loop, fixed volume, start/stop + timer (no mic below iOS 11)
   MID: 'MID', // 15.4–16.3: background audio + MediaSession, fixed volume
   MODERN: 'MODERN', // 16.4+: GainNode remote volume/fades, over-mute playback, remote start-from-silence (best-effort)
 });

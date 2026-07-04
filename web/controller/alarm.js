@@ -96,8 +96,8 @@ export function startAlarm() {
 
 export function stopAlarm() {
   active = false;
-  if (alarmEl) { try { alarmEl.pause(); alarmEl.currentTime = 0; } catch { /* not started */ } }
-  if (osc) { try { clearInterval(gain._pulse); osc.stop(); } catch { /* already stopped */ } osc = null; gain = null; }
+  if (alarmEl) { try { alarmEl.pause(); alarmEl.currentTime = 0; } catch (_e) { /* not started */ } }
+  if (osc) { try { clearInterval(gain._pulse); osc.stop(); } catch (_e) { /* already stopped */ } osc = null; gain = null; }
   if (vibrateTimer) { clearInterval(vibrateTimer); vibrateTimer = null; if ('vibrate' in navigator) navigator.vibrate(0); }
 }
 

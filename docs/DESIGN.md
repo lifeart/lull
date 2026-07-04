@@ -43,21 +43,27 @@ These are verified against WebKit/Apple docs, bug trackers, and MDN (sources inl
 
 ### 1.7 Old-device capability tiers (feature-detect, never version-sniff)
 
-| Capability | iOS 12 | 13–14 | 15.4 | 16.4 | 17 | 18.4+ |
-|---|---|---|---|---|---|---|
-| Service worker / manifest / offline cache (HTTPS only) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `<audio>` background/lock playback in **Safari tab** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `<audio>` background in **standalone PWA** | ✗ | ✗ | ✓ (15.4) | ✓ | ✓ | ✓ |
-| MediaSession (lock-screen controls) | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ |
-| `navigator.audioSession` (over-mute playback) | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ |
-| Web Push (installed PWA only) | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ |
-| Screen Wake Lock (Safari tab) | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ |
-| Screen Wake Lock (installed PWA) | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ (18.4) |
-| Background Sync / Periodic Sync / Background Fetch | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Capability | 10.3 | iOS 12 | 13–14 | 15.4 | 16.4 | 17 | 18.4+ |
+|---|---|---|---|---|---|---|---|
+| ES modules + async/await (the code loads at all) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `<audio>` background/lock playback in **Safari tab** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Service worker / manifest / offline cache (HTTPS only) | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Mic capture — `getUserMedia` (baby monitor) | ✗ | ✓ tab | ✓ tab | ✓¹ | ✓ | ✓ | ✓ |
+| `<audio>` background in **standalone PWA** | ✗ | ✗ | ✗ | ✓ (15.4) | ✓ | ✓ | ✓ |
+| MediaSession (lock-screen controls) | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ |
+| `navigator.audioSession` (over-mute playback) | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ |
+| Web Push (installed PWA only) | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ |
+| Screen Wake Lock (Safari tab) | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ |
+| Screen Wake Lock (installed PWA) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ (18.4) |
+| Background Sync / Periodic Sync / Background Fetch | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
-**Hardware ceilings:** iPhone 5s/6, iPad Air 1, iPad mini 2/3 → **iOS 12.5** (often 1 GB RAM). iPhone 6s/SE1/7, iPad Air 2, iPad mini 4 → **iOS 15.8**. iPhone 8/X → **iOS 16.7**. iPhone XR/XS+ → iOS 17/18+.
+¹ Mic capture in a **standalone (Home-Screen) web app** needs **iOS 14.3+**; before that only the Safari *tab* can capture. The player feature-detects this and tells the parent to open the room in Safari (see `web/player/monitor.js` `availability()`).
 
-**Practical floor:** **iOS 15.4** is where an audio PWA is genuinely usable (working standalone background audio + MediaSession). iOS 12–14 degrade to "audible loop + start/stop + timer, fixed volume." **1 GB devices should be attended/best-effort only.**
+**iOS 10.3 floor:** the oldest Safari (10.1) with native **ES modules + async/await**, so the apps run **with no build step** — every iOS-10-capped device (iPhone 5/5c, iPad 4; 32-bit, 1 GB) runs 10.3.x. It's a pure **Tier-Legacy** speaker: always-audible loop + start/stop + sleep-timer, fixed volume, **no baby monitor** (getUserMedia is iOS 11+). A CI lint (`npm run lint:compat`) fails the build if any web/ source uses syntax newer than iOS 10.3. Going below 10.3 (iOS 9: iPhone 4s, iPad 2/3) would require adding a transpiler/bundler — deliberately out of scope.
+
+**Hardware ceilings:** iPhone 5/5c, iPad 4 → **iOS 10.3.4** (32-bit, 1 GB). iPhone 5s/6, iPad Air 1, iPad mini 2/3 → **iOS 12.5** (often 1 GB RAM). iPhone 6s/SE1/7, iPad Air 2, iPad mini 4 → **iOS 15.8**. iPhone 8/X → **iOS 16.7**. iPhone XR/XS+ → iOS 17/18+.
+
+**Practical floor:** **iOS 15.4** is where an audio PWA is genuinely usable (working standalone background audio + MediaSession). iOS 10.3–14 degrade to "audible loop + start/stop + timer, fixed volume." **1 GB / 32-bit devices should be attended/best-effort only.**
 
 ---
 
@@ -69,7 +75,7 @@ An adversarial stress-test (iOS-internals, non-technical-parent, seam-integrity,
 
 Therefore the design is **tiered by honesty**, not by wishful features:
 
-- **Tier-Legacy (iOS 12–15.3, esp. 1 GB):** model is **"always-audible night-light for sound."** One pure `<audio>` loop plays all night at a **volume calibrated once at setup**. Remote control = **sleep-timer + stop** only. No remote cold-start-from-silence. 1 GB devices: attended only.
+- **Tier-Legacy (iOS 10.3–15.3, esp. 1 GB / 32-bit):** model is **"always-audible night-light for sound."** One pure `<audio>` loop plays all night at a **volume calibrated once at setup**. Remote control = **sleep-timer + stop** only. No remote cold-start-from-silence; no baby monitor below iOS 11. 1 GB / 32-bit devices: attended only.
 - **Tier-Mid (15.4–16.3):** reliable standalone background audio + MediaSession; **volume fixed at arm time** (no over-mute session, no guaranteed gain-over-lock).
 - **Tier-Modern (16.4+, ≥2 GB, plugged, standalone):** the **full product** — GainNode remote volume + click-free fades, `audioSession='playback'` over the mute switch, MediaSession lock-screen controls, Wake Lock, and best-effort silent keep-alive + remote adjust while locked.
 

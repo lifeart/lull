@@ -53,7 +53,7 @@ function connect() {
   };
   ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
   ws.onclose = () => { ws = null; setHub('offline'); scheduleReconnect(); };
-  ws.onerror = () => { try { ws.close(); } catch { /* closing */ } };
+  ws.onerror = () => { try { ws.close(); } catch (_e) { /* closing */ } };
 }
 function scheduleReconnect() {
   reconnectDelay = Math.min(RECONNECT_MAX_MS, reconnectDelay * 1.7);
@@ -62,7 +62,7 @@ function scheduleReconnect() {
 // Force an immediate reconnect (after a token change). Detach the old socket's handlers first so its
 // late onclose can't null out the new connection.
 function reconnectNow() {
-  if (ws) { const old = ws; ws = null; old.onclose = old.onerror = old.onmessage = null; try { old.close(); } catch { /* closing */ } }
+  if (ws) { const old = ws; ws = null; old.onclose = old.onerror = old.onmessage = null; try { old.close(); } catch (_e) { /* closing */ } }
   reconnectDelay = RECONNECT_BASE_MS;
   connect();
 }
@@ -70,7 +70,7 @@ function reconnectNow() {
 function setupTokenUI() {
   const inp = $('tokenInput'), panel = $('tokenPanel'), btn = $('tokenBtn'), save = $('tokenSave');
   if (!inp || !btn || !panel || !save) return;
-  try { inp.value = localStorage.getItem('mp.token') || ''; } catch { /* storage blocked */ }
+  try { inp.value = localStorage.getItem('mp.token') || ''; } catch (_e) { /* storage blocked */ }
   btn.addEventListener('click', () => { panel.hidden = !panel.hidden; if (!panel.hidden) inp.focus(); });
   const commit = () => {
     const v = inp.value.trim();
@@ -88,7 +88,7 @@ function send(obj) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.st
 // system forgets (STOP wipes endsAtEpochMs). Remember the last-chosen timer per device (controller-
 // local) so a plain Start re-applies it, and offer a wall-clock "until 7:00" option. All timers ride
 // the existing durationMs path (the hub rebases to its own clock and owns the absolute deadline).
-const rememberedTimerKey = (deviceId) => { try { return localStorage.getItem('mp.timer.' + deviceId) || null; } catch { return null; } };
+const rememberedTimerKey = (deviceId) => { try { return localStorage.getItem('mp.timer.' + deviceId) || null; } catch (_e) { return null; } };
 const setRememberedTimerKey = (deviceId, key) => { try { key ? localStorage.setItem('mp.timer.' + deviceId, key) : localStorage.removeItem('mp.timer.' + deviceId); } catch (e) { console.warn('timer prefs blocked', e); } };
 function nextWakeEpochMs(hour) {
   const now = new Date();
@@ -457,7 +457,10 @@ function makeCard(deviceId, tier, caps) {
     paintTimerChips(); // reflect the remembered sleep-timer choice (P1)
     // Seed the slider from the DESIRED gain (what Start will use), but never fight the user.
     if (refs.slider && document.activeElement !== refs.slider && !dragging.has(deviceId)) {
-      refs.slider.value = String((d.desired && d.desired.gainLinear) ?? rep.gainLinear ?? 0.3);
+      // First DEFINED of desired gain / reported gain / default. Must be != null (not ||): gain 0
+      // is a valid value the slider has to show, and old iOS (10.3+) has no ?? operator. (finding: iOS 10)
+      const dg = d.desired && d.desired.gainLinear;
+      refs.slider.value = String(dg != null ? dg : (rep.gainLinear != null ? rep.gainLinear : 0.3));
       refs.setFill();
     }
   }
@@ -715,7 +718,7 @@ const localUrlFor = (id) => { const s = soundscapes.find((x) => x.id === id); re
 const localPlaying = () => !!localState.engine && localState.engine.getState() === STATES.PLAYING;
 async function localRealize() {
   if (!localState.engine) return;
-  await localState.engine.applyDesired({ ...localState.desired, url: localUrlFor(localState.desired.soundscape) });
+  await localState.engine.applyDesired(Object.assign({}, localState.desired, { url: localUrlFor(localState.desired.soundscape) }));
 }
 async function localArm() {
   if (localState.engine) return true;
@@ -732,18 +735,18 @@ async function localPlay() {
   primeAlarm(); localState.fading = false;
   if (!(await localArm())) { renderLocal(); return; }
   const f = timerFieldsForKey(localState.timerKey); // default-ON 45m unless the user chose otherwise / off
-  localState.desired = { ...localState.desired, verb: VERBS.START, endsAtEpochMs: f ? Date.now() + f.durationMs : null };
+  localState.desired = Object.assign({}, localState.desired, { verb: VERBS.START, endsAtEpochMs: f ? Date.now() + f.durationMs : null });
   await localRealize(); renderLocal();
 }
 async function localSetTimerKey(key) { localState.timerKey = key; const f = timerFieldsForKey(key); await localSetTimer(f ? f.durationMs : null); renderLocal(); }
-async function localStop() { localState.fading = false; localState.desired = { ...localState.desired, verb: VERBS.STOP, endsAtEpochMs: null }; await localRealize(); renderLocal(); }
+async function localStop() { localState.fading = false; localState.desired = Object.assign({}, localState.desired, { verb: VERBS.STOP, endsAtEpochMs: null }); await localRealize(); renderLocal(); }
 async function localToggle() { if (localPlaying()) await localStop(); else await localPlay(); }
-async function localSetSound(id) { localState.desired = { ...localState.desired, soundscape: id }; if (localState.armed) await localRealize(); renderLocal(); }
-function localSetGain(g) { localState.desired = { ...localState.desired, gainLinear: g }; if (localState.armed) localRealize(); }
+async function localSetSound(id) { localState.desired = Object.assign({}, localState.desired, { soundscape: id }); if (localState.armed) await localRealize(); renderLocal(); }
+function localSetGain(g) { localState.desired = Object.assign({}, localState.desired, { gainLinear: g }); if (localState.armed) localRealize(); }
 async function localSetTimer(durationMs) {
-  if (durationMs == null) { localState.desired = { ...localState.desired, endsAtEpochMs: null }; if (localState.armed) await localRealize(); renderLocal(); return; }
+  if (durationMs == null) { localState.desired = Object.assign({}, localState.desired, { endsAtEpochMs: null }); if (localState.armed) await localRealize(); renderLocal(); return; }
   if (!(await localArm())) { renderLocal(); return; }
-  localState.desired = { ...localState.desired, endsAtEpochMs: Date.now() + durationMs, verb: VERBS.START };
+  localState.desired = Object.assign({}, localState.desired, { endsAtEpochMs: Date.now() + durationMs, verb: VERBS.START });
   await localRealize(); renderLocal();
 }
 
@@ -837,7 +840,7 @@ function updateLocalRem() {
 setInterval(() => {
   const d = localState.desired;
   if (localState.armed && d.verb === VERBS.START && d.endsAtEpochMs && Date.now() >= d.endsAtEpochMs) {
-    localState.desired = { ...d, verb: VERBS.STOP, endsAtEpochMs: null };
+    localState.desired = Object.assign({}, d, { verb: VERBS.STOP, endsAtEpochMs: null });
     localState.fading = true; // shown as "winding down…" until the engine reaches STOPPED
     localState.engine.fadeOutAndStop(8); // gentle wind-down (this player is always on-screen)
     renderLocal();
@@ -863,7 +866,7 @@ function setupAddRoom() {
   copyEl.addEventListener('click', async () => {
     rebuild();
     try { await navigator.clipboard.writeText(linkEl.href); copyEl.textContent = 'Copied ✓'; setTimeout(() => { copyEl.textContent = 'Copy link'; }, 1500); }
-    catch { copyEl.textContent = 'Select the link above to copy'; } // clipboard needs a secure context
+    catch (_e) { copyEl.textContent = 'Select the link above to copy'; } // clipboard needs a secure context
   });
   rebuild();
 }

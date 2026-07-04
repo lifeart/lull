@@ -65,7 +65,7 @@ const labelFor = (id) => soundscapeLabels[id] || id;
 async function realize() {
   if (!engine) return;
   if (desired.soundscape && !soundscapeUrls[desired.soundscape]) await loadLibrary(); // uploaded track not seen yet
-  await engine.applyDesired({ ...desired, url: urlFor(desired.soundscape) });
+  await engine.applyDesired(Object.assign({}, desired, { url: urlFor(desired.soundscape) }));
   render();
 }
 
@@ -92,7 +92,7 @@ function connect() {
   };
   ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
   ws.onclose = () => { ws = null; scheduleReconnect(); };
-  ws.onerror = () => { try { ws.close(); } catch { /* already closing */ } };
+  ws.onerror = () => { try { ws.close(); } catch (_e) { /* already closing */ } };
 }
 
 function scheduleReconnect() {
@@ -193,7 +193,7 @@ async function armFromGesture() {
   } catch (e) {
     // Release the failed engine's AudioContext so repeated retry taps can't exhaust iOS's
     // ~4-AudioContext limit and permanently block arming.
-    try { await engine?.ctx?.close(); } catch (err) { console.warn('ctx close failed', err); }
+    try { if (engine && engine.ctx) await engine.ctx.close(); } catch (err) { console.warn('ctx close failed', err); }
     engine = null;
     armed = false;
     console.error('arm failed', e);
@@ -260,7 +260,7 @@ function render() {
 // --- local timer safety net: stop promptly at the deadline even before the hub snapshot ---
 setInterval(async () => {
   if (armed && desired.verb === VERBS.START && desired.endsAtEpochMs && hubNow() >= desired.endsAtEpochMs) {
-    desired = { ...desired, verb: VERBS.STOP, endsAtEpochMs: null };
+    desired = Object.assign({}, desired, { verb: VERBS.STOP, endsAtEpochMs: null });
     await realize(); report();
   }
   render();
@@ -273,20 +273,40 @@ async function toggleMonitor() {
   if (monitor.active) { monitor.stop(); localStorage.setItem('mp.monitor', '0'); }
   else {
     const ok = await monitor.start(); // needs the tap's user-activation for iOS mic permission
-    localStorage.setItem('mp.monitor', ok ? '1' : '0');
-    if (!ok) { $('monitorNote').hidden = false; $('monitorNote').textContent = 'Microphone unavailable or blocked — baby monitor off.'; }
+    localStorage.setItem('mp.monitor', ok ? '1' : '0'); // renderMonitor() surfaces monitor.lastError on failure
   }
   renderMonitor();
   report();
 }
+const MONITOR_ON_NOTE = "Sends this room's sound level to your phone. Needs the screen on — capture stops when the device locks.";
 function renderMonitor() {
-  const btn = $('monitorToggle'); if (!btn) return;
-  if (!monitor.supported()) { btn.hidden = true; return; }
+  const btn = $('monitorToggle'), note = $('monitorNote');
+  if (!btn) return;
+  const avail = monitor.availability();
+  if (!avail.ok) {
+    // Don't silently vanish the feature. For anything the parent can ACT on (open in Safari / use
+    // HTTPS) say so where the button would be; stay quiet for hard device limits (iOS 10, no Web Audio).
+    btn.hidden = true;
+    if (note) {
+      const actionable = avail.reason === 'standalone' || avail.reason === 'insecure';
+      note.hidden = !actionable;
+      if (actionable) note.textContent = avail.note;
+    }
+    return;
+  }
   btn.hidden = false;
   btn.textContent = monitor.active ? '🎙 Baby monitor: on — tap to stop' : '🎙 Start baby monitor';
   btn.classList.toggle('btn-primary', monitor.active);
   btn.classList.toggle('btn-ghost', !monitor.active);
-  $('monitorNote').hidden = !monitor.active;
+  if (note) {
+    if (monitor.active) { note.hidden = false; note.textContent = MONITOR_ON_NOTE; }
+    else if (monitor.lastError) {
+      note.hidden = false;
+      note.textContent = monitor.lastError === 'NotAllowedError'
+        ? 'Microphone blocked — allow it (Settings › Safari › Microphone), then tap again.'
+        : 'Microphone unavailable or blocked — baby monitor off.';
+    } else { note.hidden = true; }
+  }
 }
 
 // --- pre-arm hardening checklist (advisory; persisted per device) (P9) ---
@@ -324,7 +344,7 @@ function buildHardening() {
   $('armBtn').addEventListener('click', armFromGesture);
   const tokenInput = $('tokenInput'); // in-UI access token (alternative to the #t= link); read by authToken() on connect
   if (tokenInput) {
-    try { tokenInput.value = localStorage.getItem('mp.token') || ''; } catch { /* storage blocked */ }
+    try { tokenInput.value = localStorage.getItem('mp.token') || ''; } catch (_e) { /* storage blocked */ }
     tokenInput.addEventListener('input', () => {
       const v = tokenInput.value.trim();
       try { v ? localStorage.setItem('mp.token', v) : localStorage.removeItem('mp.token'); } catch (e) { console.warn('token save blocked', e); }

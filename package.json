@@ -19,6 +19,7 @@
     "fetch:ambient": "node pipeline/fetch-ambient.js",
     "fetch:real": "node pipeline/fetch-real.js",
     "image:podman": "deploy/podman-build.sh",
+    "lint:compat": "node pipeline/compat-lint.js",
     "test": "node --test test/*.test.js",
     "test:e2e": "playwright test"
   },

@@ -59,7 +59,7 @@ export class AudioEngine {
     el.addEventListener('pause', () => {
       if (!shouldSound()) return;
       const recheck = () => { const before = this.state; this.reconcileLiveness(); if (this.state !== before) this._emit(); };
-      try { Promise.resolve(el.play()).then(recheck, recheck); } catch { recheck(); }
+      try { Promise.resolve(el.play()).then(recheck, recheck); } catch (_e) { recheck(); }
     });
 
     // Promote the audio session so it plays in the background and OVER the mute switch (16.4+).
@@ -254,7 +254,7 @@ export class AudioEngine {
     if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
     try {
       navigator.mediaSession.playbackState = this.state === STATES.PLAYING ? 'playing' : 'paused';
-    } catch { /* older iOS lacks playbackState — non-fatal, handler is what matters */ }
+    } catch (_e) { /* older iOS lacks playbackState — non-fatal, handler is what matters */ }
   }
 
   async _acquireWakeLock() {

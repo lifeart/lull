@@ -20,6 +20,8 @@ jobs:
       - run: npm ci
       - name: Bake loops + icons
         run: npm run bake
+      - name: Old-iOS compat lint (web/ must parse on iOS 10.3)
+        run: npm run lint:compat
       - name: Node tests
         run: npm test
       - name: Install Chromium for Playwright

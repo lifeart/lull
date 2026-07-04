@@ -29,7 +29,7 @@ A phone that's "too old for the App Store" is still a perfectly good speaker. **
 
 **No account. No subscription. No cookie banner. No "welcome, let us tell you our story."** At 3 a.m. you shouldn't have to search a library, dismiss three pop‑ups, and accept a privacy policy to calm a crying baby. You tap once — there's sound.
 
-It runs on one codebase from **iOS 12 to today** (feature‑detected), needs **one tiny always‑on hub** (a single Node process, one dependency), and keeps the audio *honest* — which is the whole trick, below.
+It runs on one codebase from **iOS 10.3 to today** (feature‑detected, no build step), needs **one tiny always‑on hub** (a single Node process, one dependency), and keeps the audio *honest* — which is the whole trick, below.
 
 ## Features
 
@@ -95,7 +95,7 @@ npm run serve:demo                # build + serve the static demo locally
 - **Controller PWA** (`/controller/`) — the remote on the parent's phone.
 - **Shared protocol** (`shared/protocol.js`) — one wire contract imported by all three, so no layer can disagree on verbs/units/state.
 
-The full architecture, the verified iOS constraints, and the capability tiers (iOS 12 → 18) are in [`docs/DESIGN.md`](docs/DESIGN.md).
+The full architecture, the verified iOS constraints, and the capability tiers (iOS 10.3 → 18) are in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Live demo
 
@@ -125,7 +125,7 @@ Full topology matrix (LAN · tunnel · "GitHub Pages + WebRTC vs. a standalone h
 
 - **iOS devices can't *receive* AirPlay** — they only send it. You can't AirPlay *to* an old iPhone.
 - **A native app** means rebuilding and re‑signing per iOS version and device — exactly what old hardware makes painful.
-- **Web tech** covers iOS ~12 → current from one codebase; the price is the background‑audio constraints above, which the design turns into a feature.
+- **Web tech** covers iOS ~10.3 → current from one codebase (no build step); the price is the background‑audio constraints above, which the design turns into a feature.
 
 *Prior art worth knowing:* **Snapcast + Snapweb** and **Home Assistant + Music Assistant** already solve server‑controlled browser audio if you're happy to self‑host them. Lull is the from‑scratch, purpose‑built take on the old‑iOS‑as‑nursery‑speaker case.
 
