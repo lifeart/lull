@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Remotely play/control white noise on old iPhones/iPads via web tech on the home LAN.",
+  "description": "Turn old iPhones/iPads into nursery white-noise speakers you run from your phone. Web tech only, no app.",
+  "license": "MIT",
+  "homepage": "https://lifeart.github.io/lull/",
+  "repository": { "type": "git", "url": "https://github.com/lifeart/lull.git" },
   "scripts": {
     "bake": "node pipeline/bake.js",
     "start": "node hub/server.js",

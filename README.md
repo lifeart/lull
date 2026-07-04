@@ -13,6 +13,7 @@ Web tech only — no App Store, no native build, nothing to install. Open it, ta
 ![PWA](https://img.shields.io/badge/PWA-installable-5aa2ff)
 ![tests](https://img.shields.io/badge/tests-113%20green-brightgreen)
 ![web tech only](https://img.shields.io/badge/native%20app-none-lightgrey)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
 
@@ -134,6 +135,11 @@ Full topology matrix (LAN · tunnel · "GitHub Pages + WebRTC vs. a standalone h
 
 ---
 
+## License
+
+[MIT](LICENSE) — do what you like with the code. (The optional field recordings pulled in by
+`npm run fetch:real` are CC0 / public‑domain, fetched separately and never committed here.)
+
 <div align="center">
-Personal project, shared as‑is. Give the old phones in your drawer a second life. 🌙
+MIT‑licensed &nbsp;·&nbsp; give the old phones in your drawer a second life. 🌙
 </div>
