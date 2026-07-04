@@ -6,20 +6,23 @@
   "description": "Turn old iPhones/iPads into nursery white-noise speakers you run from your phone. Web tech only, no app.",
   "license": "MIT",
   "homepage": "https://lifeart.github.io/lull/",
-  "repository": { "type": "git", "url": "https://github.com/lifeart/lull.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lifeart/lull.git"
+  },
   "scripts": {
     "bake": "node pipeline/bake.js",
     "start": "node hub/server.js",
     "dev": "node hub/server.js",
     "build:demo": "node pipeline/build-demo.js",
-  "serve:demo": "node pipeline/serve-demo.js",
+    "serve:demo": "node pipeline/serve-demo.js",
     "fetch:ambient": "node pipeline/fetch-ambient.js",
-  "fetch:real": "node pipeline/fetch-real.js",
+    "fetch:real": "node pipeline/fetch-real.js",
     "test": "node --test test/*.test.js",
     "test:e2e": "playwright test"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
     "ws": "^8.18.0"

@@ -1,6 +1,6 @@
 # Build the hub image with its deps installed FOR THE TARGET ARCH (never bind-mount host
 # node_modules — that would be the dev machine's arch and can fail to load). (finding: deploy)
-FROM node:20-alpine
+FROM node:24-alpine
 RUN apk add --no-cache su-exec
 WORKDIR /app
 COPY package.json package-lock.json ./
