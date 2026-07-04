@@ -58,6 +58,10 @@ edit(O('player', 'index.html'), (s) => injectMock(toRelative(s), 'player.js'));
 edit(O('controller', 'index.html'), (s) => injectMock(toRelative(s), 'controller.js'));
 edit(O('player', 'player.js'), (s) => disableSw(toRelative(s)));
 edit(O('controller', 'controller.js'), (s) => disableSw(toRelative(s)));
+// audio.js imports `../../shared/protocol.js` — a trick that CLAMPS to `/shared/…` at origin root (and
+// resolves for Node tests). That breaks under a project-pages SUBPATH (…/lull/), where it still clamps to
+// the origin root → /shared/protocol.js (404). Normalize it to `../shared/…`, which is correct at both / and /lull/.
+edit(O('player', 'audio.js'), (s) => s.replace(/\.\.\/\.\.\/shared\//g, '../shared/'));
 edit(O('player', 'manifest.webmanifest'), toRelative);
 edit(O('controller', 'manifest.webmanifest'), toRelative);
 
