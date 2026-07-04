@@ -17,7 +17,11 @@ Web tech only — no App Store, no native build, nothing to install. Open it, ta
 
 </div>
 
-<img src="demo/shots/controller-top-light.png" alt="Lull controller — one-tap bedtime, rooms, sounds, sleep timer" width="290" align="right" />
+<p align="center">
+  <img src="demo/shots/controller-top-light.png" alt="Controller — one-tap bedtime, rooms, sounds, sleep timer" width="235" />
+  &nbsp;&nbsp;
+  <img src="demo/shots/player-setup.png" alt="Speaker — arm once, overnight checklist" width="235" />
+</p>
 
 ## What it is
 
