@@ -78,15 +78,17 @@ npm run serve:demo                # build + serve the static demo locally
 ## How it works
 
 ```
-  Parent's phone                Always-on hub               Old iPad (nursery)
- ┌───────────────┐   command   ┌────────────────┐  command  ┌──────────────────┐
- │ Controller PWA │──────────▶ │  Hub (Node/ws)  │─────────▶ │  Player PWA       │
- │ start · stop   │            │  • static + WS  │           │  • looping <audio>│
- │ volume · timer │◀────────── │  • desired /    │◀───────── │  • Web Audio gain │
- │ alarms         │   state     │    reported     │   state   │  • MediaSession   │
- └───────────────┘            │  • sleep timer  │           │  • auto-reconnect │
-                              └────────────────┘           └──────────────────┘
+     Parent's phone                   Always-on hub                  Old iPad (nursery)
+┌──────────────────────┐         ┌──────────────────────┐         ┌──────────────────────┐
+│ Controller PWA       │         │ Hub (Node + ws)      │         │ Player PWA           │
+│ • start / stop       │         │ • serves both PWAs   │         │ • looping <audio>    │
+│ • volume · timer     │   ──>   │ • desired / reported │   ──>   │ • Web Audio gain     │
+│ • sleep timer        │   <──   │ • hub-owned timer    │   <──   │ • MediaSession       │
+│ • the alarm          │         │ • single source      │         │ • auto-reconnect     │
+└──────────────────────┘         └──────────────────────┘         └──────────────────────┘
 ```
+
+*→ commands (each needs an ACK within ~3 s) &nbsp;·&nbsp; ← state (desired intent vs. reported telemetry)*
 
 - **Hub** — a tiny always‑on box; serves both apps over HTTPS, relays commands, and is the single source of truth (`desired` intent vs. `reported` telemetry, stored as an atomic JSON file).
 - **Player PWA** (`/player/`) — the "speaker" on each old device.
