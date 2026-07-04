@@ -47,6 +47,7 @@ PLATFORM="${PLATFORM:-linux/amd64}"
 OUTPUT="${OUTPUT:-$REPO_ROOT/deploy/${IMAGE}.tar}"
 DO_LOAD=0
 SKIP_BAKE=0
+NO_CACHE=0
 
 usage() { sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
@@ -58,6 +59,7 @@ while [ $# -gt 0 ]; do
     --output|-o) OUTPUT="$2"; shift 2 ;;
     --load)     DO_LOAD=1; shift ;;
     --no-bake)  SKIP_BAKE=1; shift ;;
+    --no-cache) NO_CACHE=1; shift ;;
     -h|--help)  usage 0 ;;
     *) echo "Unknown argument: $1" >&2; usage 1 ;;
   esac
@@ -94,12 +96,9 @@ echo "  context: $REPO_ROOT   dockerfile: deploy/Dockerfile"
 # --format docker is REQUIRED: Podman defaults to the OCI image format, which does NOT
 # support HEALTHCHECK and silently drops the Dockerfile's — the compose file + Container
 # Manager rely on /healthz health, so we build in Docker (v2s2) format to keep it.
-podman build \
-  --format docker \
-  --platform "$PLATFORM" \
-  -t "$REF" \
-  -f "$REPO_ROOT/deploy/Dockerfile" \
-  "$REPO_ROOT"
+BUILD_ARGS=(--format docker --platform "$PLATFORM" --build-arg "CACHEBUST=$(date +%s)" -t "$REF" -f "$REPO_ROOT/deploy/Dockerfile")
+[ "$NO_CACHE" -eq 1 ] && BUILD_ARGS+=(--no-cache)
+podman build "${BUILD_ARGS[@]}" "$REPO_ROOT"
 
 # Podman normalizes the short tag to localhost/… — confirm which ref actually exists
 # (belt-and-suspenders: also accept the bare form in case a future Podman changes this).

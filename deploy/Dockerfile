@@ -5,6 +5,11 @@ RUN apk add --no-cache su-exec
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
+# CACHEBUST busts the layer cache from here down on every build (podman-build.sh passes a fresh value)
+# WITHOUT re-running the npm ci above. Without it, podman can reuse a stale COPY layer and silently
+# ship OLD app code — a deploy that "changes nothing". (finding: stale COPY layer)
+ARG CACHEBUST=0
+RUN echo "cachebust=${CACHEBUST}" > /tmp/.cachebust
 COPY . .
 # Prefer loops baked NATIVELY on the host (deploy/podman-build.sh does this). The DSP miscompiles
 # under CPU emulation (baking a linux/amd64 image on an Apple-Silicon host runs bake under Rosetta),
