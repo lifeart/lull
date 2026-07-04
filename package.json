@@ -18,6 +18,7 @@
     "serve:demo": "node pipeline/serve-demo.js",
     "fetch:ambient": "node pipeline/fetch-ambient.js",
     "fetch:real": "node pipeline/fetch-real.js",
+    "image:podman": "deploy/podman-build.sh",
     "test": "node --test test/*.test.js",
     "test:e2e": "playwright test"
   },

@@ -4,15 +4,21 @@
 #   • DSM Reverse Proxy + Let's Encrypt        → LAN-local TLS, full features, survives WAN outage
 #   • Cloudflare Tunnel (cloudflared below)    → trusted TLS, no port-forward, iOS 12–14, remote access
 #
-# Container Manager → Project → Create → upload this file (put the repo on the NAS so `build:` works,
-# or pre-build the image and replace `build:` with `image: lull-hub:latest`).
+# TWO WAYS TO GET THE IMAGE:
+#   A) Pre-build off-NAS with Podman (recommended — no repo/toolchain on the NAS):
+#        ./deploy/podman-build.sh              # → deploy/lull-hub.tar (arch: linux/amd64)
+#        # copy it over, then:  docker load -i lull-hub.tar
+#      The script strips Podman's `localhost/` prefix, so the loaded image is a clean
+#      `lull-hub:latest` that the `image:` line below matches exactly. This is the default.
+#   B) Build on the NAS: put the repo on the NAS, comment out `image:` and uncomment `build:`.
+# Then: Container Manager → Project → Create → upload this file.
 
 services:
   hub:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-    # image: lull-hub:latest   # ← use instead of build: if you pre-built the image
+    image: lull-hub:latest   # produced by deploy/podman-build.sh (localhost/ prefix stripped)
+    # build:                 # ← use instead of image: to build on the NAS (needs the repo present)
+    #   context: ..
+    #   dockerfile: deploy/Dockerfile
     container_name: lull-hub
     ports:
       - "8080:8080" # host:container — reach the hub at http://<nas-ip>:8080 (or proxy 443 → here)

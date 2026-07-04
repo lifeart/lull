@@ -7,6 +7,39 @@ Use [`deploy/docker-compose.synology.yml`](../deploy/docker-compose.synology.yml
 
 ---
 
+## Getting the image onto the NAS (Podman build — recommended)
+
+You don't need the repo or a Node toolchain on the NAS. Build the image on your laptop with
+**Podman** and ship a single tarball:
+
+```bash
+./deploy/podman-build.sh            # → deploy/lull-hub.tar   (default arch: linux/amd64)
+# ARM Synology instead?  ./deploy/podman-build.sh --platform linux/arm64
+```
+
+Then load it on the NAS (SSH, or **Container Manager → Image → Import**) and bring the project up:
+
+```bash
+docker load -i lull-hub.tar
+docker compose -f deploy/docker-compose.synology.yml up -d
+```
+
+> **The `localhost/` gotcha this solves.** `podman build -t lull-hub` stores the image as
+> `localhost/lull-hub` — Podman prefixes every short, locally-built name with the `localhost/`
+> registry, and that prefix survives `podman save`. Loaded as-is, the image is
+> `localhost/lull-hub:latest`, so the compose `image: lull-hub:latest` won't match (Container Manager
+> then tries to *pull* `lull-hub` and fails). `deploy/podman-build.sh` strips the prefix from the
+> saved archive, so it lands as a clean, bare **`lull-hub:latest`** the compose file references directly.
+>
+> **Match the arch.** Most Container-Manager Synology models are x86_64 — hence the `linux/amd64`
+> default. Building the wrong arch loads fine but exits 1 at runtime. (`docker load` on a mismatched
+> NAS is the tell.)
+
+*(Alternative: build on the NAS itself — put the repo there and swap `image:` for `build:` in the
+compose file. Podman is the paved road because it keeps the NAS clean.)*
+
+---
+
 ## Do you actually need TLS?
 
 The core of Lull — a looping white-noise `<audio>` element that keeps playing while the
@@ -43,8 +76,9 @@ If you want the modern features, use HTTPS. On a NAS you have three low-friction
 
 ## Option A — Plain HTTP on the LAN (simplest)
 
-1. **Container Manager → Project → Create.** Put the repo on the NAS (or pre-build the image) and use
-   `deploy/docker-compose.synology.yml`. Create the data folder first, e.g. `/docker/lull`.
+1. **Get the image on the NAS** (see [Podman build](#getting-the-image-onto-the-nas-podman-build--recommended)
+   above), then **Container Manager → Project → Create** with `deploy/docker-compose.synology.yml`.
+   Create the data folder first, e.g. `/docker/lull`.
 2. Set a token (recommended even on the LAN): in the project's environment, `MP_TOKEN=<openssl rand -hex 24>`.
    Or, for a fully-trusted LAN, `MP_ALLOW_OPEN=1` and no token. (The hub **refuses to start** bound to a
    real interface with neither — that's intentional.)
