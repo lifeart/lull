@@ -53,6 +53,7 @@ export class Monitor {
     this.level = 0;
     this.active = false;
     this.lastError = null; // set when a start() attempt fails at runtime (permission, etc.)
+    this._prevSessionType = null; // audioSession.type to restore on stop (iOS 16.4+)
   }
 
   // Why the mic can / can't run on THIS device+context, so the UI can be honest instead of hiding the
@@ -80,6 +81,17 @@ export class Monitor {
     if (this.active) return true;
     this.lastError = null;
     if (!this.supported()) { this.lastError = this.availability().reason; return false; }
+    // iOS 16.4+ audio session: the player pins type='playback' at arm (to play over the mute switch).
+    // Per the W3C Audio Session spec a mic track is ENDED unless the type is 'play-and-record' or
+    // 'auto' — so with 'playback', getUserMedia yields a dead track / no prompt / a silent hang (the
+    // "Start baby monitor does nothing" report on iOS 17). Declare capture intent FIRST, synchronously
+    // in the gesture, and restore the playback session on stop. (finding: iOS 17 baby monitor)
+    try {
+      if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
+        this._prevSessionType = navigator.audioSession.type;
+        navigator.audioSession.type = 'play-and-record';
+      }
+    } catch (e) { console.warn('[monitor] audioSession set failed', e); }
     try {
       // echo/noise processing ON: iOS routes web capture through the voice pipeline whose echo
       // canceller subtracts the device's OWN output — i.e. it attenuates our white noise, so a cry
@@ -128,6 +140,14 @@ export class Monitor {
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
     if (this.stream) { try { this.stream.getTracks().forEach((t) => t.stop()); } catch (e) { console.warn('[monitor] track stop', e); } }
     if (this.ctx) { this.ctx.close().catch(() => {}); }
+    // Restore the player's audio session (usually 'playback' — loud, over the mute switch) now that
+    // we're done recording, so stopping the monitor returns the noise loop to its normal routing.
+    try {
+      if (typeof navigator !== 'undefined' && 'audioSession' in navigator && this._prevSessionType) {
+        navigator.audioSession.type = this._prevSessionType;
+      }
+    } catch (e) { console.warn('[monitor] audioSession restore failed', e); }
+    this._prevSessionType = null;
     this.stream = this.ctx = this.analyser = this.buf = null;
     this.level = 0;
   }

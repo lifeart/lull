@@ -281,10 +281,22 @@ setInterval(async () => {
 async function toggleMonitor() {
   if (monitor.active) { monitor.stop(); localStorage.setItem('mp.monitor', '0'); }
   else {
-    const ok = await monitor.start(); // needs the tap's user-activation for iOS mic permission
+    // Watchdog for the "Start does nothing, no prompt" report: in an INSTALLED app some iOS versions
+    // silently HANG getUserMedia (no prompt, no error) so start() never resolves and the failure path
+    // below never runs. If nothing has settled in 9s, say so — WITHOUT aborting a genuine prompt the
+    // parent is still answering. Cleared as soon as start() returns. (finding: iOS 17 baby monitor)
+    let settled = false;
+    const watchdog = setTimeout(() => {
+      if (!settled && !monitor.active && window.__lullError) {
+        window.__lullError('Baby monitor: no response to the microphone request after 9s. If no permission prompt appeared, this iOS version blocks the mic in the installed (Home-Screen) app — open this room in Safari instead.');
+      }
+    }, 9000);
+    let ok = false;
+    try { ok = await monitor.start(); } // needs the tap's user-activation for iOS mic permission
+    finally { settled = true; clearTimeout(watchdog); }
     localStorage.setItem('mp.monitor', ok ? '1' : '0'); // renderMonitor() surfaces monitor.lastError on failure
     if (!ok) {
-      // Make the failure UNMISSABLE (the "Start baby monitor does nothing" report): why it didn't run.
+      // Immediate failure (denied / unsupported / constraints): why it didn't run.
       const a = monitor.availability();
       const why = monitor.lastError || a.reason || 'unknown';
       console.warn('[monitor] not started:', why, a);

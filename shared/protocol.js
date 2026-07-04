@@ -117,7 +117,7 @@ export function defaultDesired() {
 // with THIS function, so intent can never be interpreted two different ways.
 // Returns a NEW desired object (does not mutate input).
 export function applyCommandToDesired(desired, cmd) {
-  const d = { ...desired };
+  const d = Object.assign({}, desired);
   switch (cmd.verb) {
     case VERBS.START:
       d.verb = VERBS.START;
@@ -155,7 +155,7 @@ export function reconcileTimer(desired, nowMs) {
     typeof desired.endsAtEpochMs === 'number' &&
     nowMs >= desired.endsAtEpochMs
   ) {
-    return { desired: { ...desired, verb: VERBS.STOP, endsAtEpochMs: null }, changed: true };
+    return { desired: Object.assign({}, desired, { verb: VERBS.STOP, endsAtEpochMs: null }), changed: true };
   }
   return { desired, changed: false };
 }

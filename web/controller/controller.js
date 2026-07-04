@@ -888,5 +888,6 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 window.addEventListener('online', () => { if (!ws) connect(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { if (!ws) connect(); else runHealthCheck(); } });
 setupTokenUI();
-await loadSoundscapes();
-connect();
+// Top-level await is iOS 15+; wrap so the controller parses on iOS 10.3–14. Same order as before:
+// load the sound library, then connect. (finding: iOS 10 — shared/ + top-level-await slipped the lint)
+(async () => { await loadSoundscapes(); connect(); })();
