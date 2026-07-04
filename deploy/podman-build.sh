@@ -25,6 +25,11 @@
 #   deploy/podman-build.sh --platform linux/arm64       # for an ARM Synology
 #   deploy/podman-build.sh --tag v1 --output /tmp/x.tar
 #   deploy/podman-build.sh --load                       # also load into local docker (to test)
+#   deploy/podman-build.sh --no-bake                    # skip the native host bake (assets already fresh)
+#
+# It bakes the audio loops NATIVELY on the host first (the synthesis DSP miscompiles under CPU
+# emulation, so an in-image amd64 bake on an Apple-Silicon host would ship corrupt loops) and copies
+# those arch-independent .wav files into the image.
 #
 # Then on the NAS (Container Manager → or SSH):
 #   docker load -i lull-hub.tar
@@ -41,8 +46,9 @@ TAG="${TAG:-latest}"
 PLATFORM="${PLATFORM:-linux/amd64}"
 OUTPUT="${OUTPUT:-$REPO_ROOT/deploy/${IMAGE}.tar}"
 DO_LOAD=0
+SKIP_BAKE=0
 
-usage() { sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -51,6 +57,7 @@ while [ $# -gt 0 ]; do
     --platform) PLATFORM="$2"; shift 2 ;;
     --output|-o) OUTPUT="$2"; shift 2 ;;
     --load)     DO_LOAD=1; shift ;;
+    --no-bake)  SKIP_BAKE=1; shift ;;
     -h|--help)  usage 0 ;;
     *) echo "Unknown argument: $1" >&2; usage 1 ;;
   esac
@@ -65,6 +72,19 @@ if ! podman info >/dev/null 2>&1; then
   echo "✗ podman can't reach its engine." >&2
   echo "  On macOS/Windows start the VM first:  podman machine start" >&2
   exit 1
+fi
+
+# ── Bake the audio loops NATIVELY on the host, BEFORE the (possibly emulated) image build ─────────
+# The synthesis DSP miscompiles under CPU emulation: building a linux/amd64 image on an Apple-Silicon
+# host runs the in-image `node pipeline/bake.js` under Rosetta, which corrupts the loops (clipping /
+# near-silence / DC steps) — recordings survive only because they're pre-made files. A .wav is
+# arch-independent, so we bake here on the native host (correct, and self-validated: bake.js throws
+# on a bad loop) and the Dockerfile copies these in instead of re-baking under emulation.
+# Skip with --no-bake if you've already baked natively. (finding: emulated-bake corruption)
+if [ "$SKIP_BAKE" -ne 1 ]; then
+  command -v node >/dev/null 2>&1 || { echo "✗ node not found on PATH (needed to bake loops natively)." >&2; exit 1; }
+  echo "▶ Baking loops natively on the host ($(uname -m)) — arch-independent audio"
+  node "$REPO_ROOT/pipeline/bake.js"
 fi
 
 echo "▶ Building $REF  (platform: $PLATFORM)"

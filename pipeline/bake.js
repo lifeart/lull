@@ -39,7 +39,20 @@ const CF_SEC = Number(args.crossfade || 1.0);
 const LUFS_TARGET = -16;
 const PEAK_CEIL = 0.8;
 
-const rnd = () => Math.random() * 2 - 1; // white sample in [-1,1]
+// Deterministic PRNG (mulberry32). The loops MUST be reproducible: an unseeded random() makes
+// every bake byte-different, which (a) defeats caching/verification and (b) turns a
+// platform-dependent numeric bug into a heisenbug. A fixed seed → identical loops on every run and
+// machine, so a good bake stays good and a bad one fails validation the same way every time.
+// Override with --seed=<n> to audition a different noise draw. (finding: non-deterministic bake)
+let _s = (Number(args.seed) || 0x9e3779b9) >>> 0;
+const random = () => {
+  _s = (_s + 0x6d2b79f5) >>> 0;
+  let t = _s;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+const rnd = () => random() * 2 - 1; // white sample in [-1,1]
 
 // --- reusable DSP primitives -------------------------------------------------------------------
 
@@ -78,7 +91,7 @@ function makeSVF() {
 function poissonEvents(n, ratePerSec) {
   const evs = [], mean = SR / ratePerSec;
   let t = 0;
-  while (t < n) { t += -Math.log(1 - Math.random()) * mean; if (t < n) evs.push(Math.floor(t)); }
+  while (t < n) { t += -Math.log(1 - random()) * mean; if (t < n) evs.push(Math.floor(t)); }
   return evs;
 }
 
@@ -132,8 +145,8 @@ function rain(n, loopN) { // dense filtered-noise WASH (the roar) + broadband sp
     out[i] = roarLP(roarHP(rnd())) * roarMod * 1.3 + hissLP(hissHP(rnd())) * hissMod * 0.5;
   }
   // Dense fine drops (a patter, blending into the wash) + sparse closer, heavier drops.
-  for (const ev of poissonEvents(n, 260)) addSplat(out, ev, 1500 + Math.random() * 4000, 0.003 + Math.random() * 0.005, 0.05 + Math.random() * 0.10);
-  for (const ev of poissonEvents(n, 7)) addSplat(out, ev, 500 + Math.random() * 1200, 0.012 + Math.random() * 0.02, 0.16 + Math.random() * 0.18);
+  for (const ev of poissonEvents(n, 260)) addSplat(out, ev, 1500 + random() * 4000, 0.003 + random() * 0.005, 0.05 + random() * 0.10);
+  for (const ev of poissonEvents(n, 7)) addSplat(out, ev, 500 + random() * 1200, 0.012 + random() * 0.02, 0.16 + random() * 0.18);
   return out;
 }
 function ocean(n, loopN) { // three whole-cycle swells (seamless) + asymmetric crest wash (§4)
@@ -194,11 +207,11 @@ function fire(n, loopN) { // warm low-mid ROAR that flares + irregular CLUSTERED
     out[i] = bed + hissHP(rnd()) * hissEnv * 0.09;
   }
   for (const ev of poissonEvents(n, 12)) // baseline sparse ticks
-    addSplat(out, ev, 900 + Math.random() * 1500, 0.004 + Math.random() * 0.01, 0.04 + Math.random() * 0.12);
+    addSplat(out, ev, 900 + random() * 1500, 0.004 + random() * 0.01, 0.04 + random() * 0.12);
   for (const cl of poissonEvents(n, 1.8)) { // crackle CLUSTERS: a flurry of pops within ~280 ms
-    const count = 3 + Math.floor(Math.random() * 5);
+    const count = 3 + Math.floor(random() * 5);
     for (let k = 0; k < count; k++)
-      addSplat(out, cl + Math.floor(Math.random() * 0.28 * SR), 1000 + Math.random() * 1700, 0.005 + Math.random() * 0.012, 0.1 + Math.random() * 0.32);
+      addSplat(out, cl + Math.floor(random() * 0.28 * SR), 1000 + random() * 1700, 0.005 + random() * 0.012, 0.1 + random() * 0.32);
   }
   return out;
 }
@@ -305,6 +318,32 @@ function encodeWavPCM16(float32) {
   return buf;
 }
 
+// Fail-loud gate on the finished synth loop. The synthesis pipeline (biquads, the LUFS meter,
+// per-sample reductions) has been observed to MISCOMPILE under x86 emulation (e.g. baking inside a
+// linux/amd64 container on an Apple-Silicon host via Rosetta): the loudness meter reads silence,
+// normalization then multiplies by ~10^5, and the loop ships as clipping / near-silence / a DC step.
+// A .wav is arch-independent data, so the fix is to bake NATIVELY — but this gate guarantees a
+// corrupt loop can never ship silently: if the numbers are impossible for a healthy loop we THROW,
+// failing the build loudly. Thresholds are far from any healthy value (steady noise: DC≈0, no clip,
+// RMS≈0.1–0.2) so legitimately dynamic loops (heartbeat's gaps) pass. (finding: emulated-bake corruption)
+function validateLoop(id, out) {
+  const N = out.length;
+  let sum = 0, sumSq = 0, clip = 0, bad = 0;
+  for (let i = 0; i < N; i++) {
+    const v = out[i];
+    if (!Number.isFinite(v)) { bad++; continue; }
+    sum += v; sumSq += v * v;
+    if (Math.abs(v) >= 0.999) clip++;
+  }
+  const dc = sum / N, rms = Math.sqrt(sumSq / N), clipFrac = clip / N;
+  const fail = (msg) => { throw new Error(`[bake] ${id}.wav is corrupt — ${msg}. This is the signature of a bake run under CPU emulation (Rosetta/QEMU); bake natively (see deploy/podman-build.sh). dc=${dc.toFixed(4)} rms=${rms.toFixed(4)} clipFrac=${clipFrac.toExponential(2)} nonFinite=${bad}`); };
+  if (bad > 0) fail(`${bad} non-finite samples (NaN/Inf)`);
+  if (Math.abs(dc) > 0.02) fail(`DC offset ${dc.toFixed(4)} (healthy ≈ 0)`);
+  if (clipFrac > 1e-3) fail(`${clip} clipped samples (healthy = 0)`);
+  if (rms < 0.03) fail(`near-silent, RMS ${rms.toFixed(4)} (healthy ≈ 0.1–0.2)`);
+  if (rms > 0.5) fail(`over-scaled, RMS ${rms.toFixed(4)} (healthy ≈ 0.1–0.2)`);
+}
+
 async function main() {
   await mkdir(OUT_DIR, { recursive: true });
   const loopN = Math.round(LOOP_SEC * SR), cfN = Math.round(CF_SEC * SR);
@@ -326,16 +365,18 @@ async function main() {
   const soundscapes = [];
   for (const k of kinds) {
     const { out, lufs, peak } = seamlessLoop(k.gen, loopN, cfN);
-    const wav = encodeWavPCM16(out), file = `${k.id}.wav`;
+    const file = `${k.id}.wav`;
+    // Does a human-cleared real recording exist (npm run fetch:real)? It replaces the synthesized
+    // loop where recordings beat synthesis (ocean/fire/wind). Downloaded audio is gitignored; on a
+    // clean checkout the synth loop stands. Decide FIRST so we only gate/ship the loop that wins.
+    const realPath = path.join(OUT_DIR, 'real', file);
+    const real = existsSync(realPath);
+    if (!real) validateLoop(k.id, out); // fail loud on a corrupt synth loop (see validateLoop)
+    const wav = encodeWavPCM16(out);
     await writeFile(path.join(OUT_DIR, file), wav);
     const entry = { id: k.id, label: k.label, files: [file], durationSec: LOOP_SEC };
     if (k.kind) entry.kind = k.kind;
-    // Overlay a human-cleared real recording if one was fetched (npm run fetch:real) — it replaces the
-    // synthesized loop for that id where recordings beat synthesis (ocean/fire/wind). Downloaded audio
-    // is gitignored; on a clean checkout without it, the synth loop above stands.
-    const realPath = path.join(OUT_DIR, 'real', file);
-    let real = false;
-    if (existsSync(realPath)) { copyFileSync(realPath, path.join(OUT_DIR, file)); entry.source = 'recording'; real = true; }
+    if (real) { copyFileSync(realPath, path.join(OUT_DIR, file)); entry.source = 'recording'; }
     soundscapes.push(entry);
     console.log(real
       ? `[bake] ${file.padEnd(14)} real recording (overlaid)`

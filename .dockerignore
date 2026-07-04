@@ -4,5 +4,10 @@ data
 test
 deploy/caddy_data
 deploy/caddy_config
-web/player/assets/*.wav
-web/player/assets/manifest.json
+# build artifacts that must never bloat the image context:
+deploy/*.tar
+_site
+.tmp-ambient
+# source recordings — already overlaid into the shipped top-level *.wav by the native host bake
+# (deploy/podman-build.sh), so the image doesn't need the raw sources. (finding: emulated-bake corruption)
+web/player/assets/real

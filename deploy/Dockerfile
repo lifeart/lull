@@ -6,7 +6,17 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY . .
-RUN node pipeline/bake.js \
+# Prefer loops baked NATIVELY on the host (deploy/podman-build.sh does this). The DSP miscompiles
+# under CPU emulation (baking a linux/amd64 image on an Apple-Silicon host runs bake under Rosetta),
+# shipping clipping/silent/DC loops. A .wav is arch-independent, so we bake on the host and copy the
+# result in; bake.js also self-validates (throws) so a corrupt in-image fallback bake fails the build
+# loudly instead of shipping garbage. (finding: emulated-bake corruption)
+RUN if [ -f web/player/assets/manifest.json ] && [ -f web/player/assets/pink.wav ]; then \
+      echo "[docker] using pre-baked (host-native) audio assets"; \
+    else \
+      echo "[docker] no pre-baked assets found — baking in-image (must NOT be under emulation)"; \
+      node pipeline/bake.js; \
+    fi \
  && mkdir -p /data \
  && chown -R node:node /app /data \
  && chmod +x deploy/entrypoint.sh
