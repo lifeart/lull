@@ -15,6 +15,27 @@ import { fileURLToPath } from 'node:url';
 
 const WEB_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
 
+// Object spread/rest ({ ...x }, { a, ...x }) is ES2018 (iOS 11.3); ARRAY spread ([...x]) and call
+// spread (f(...x)) are ES2015 and fine. A regex can't tell them apart, so for each "...ident" we scan
+// back to its innermost UNCLOSED bracket on the line: only `{` (an object literal — a bare `...` in a
+// block is a syntax error, so an enclosing `{` is always an object) is the ES2018 form we must flag.
+export function objectSpreadOnLine(line) {
+  const re = /\.\.\.[\w$]/g;
+  let r;
+  while ((r = re.exec(line))) {
+    const stack = [];
+    for (let j = r.index - 1; j >= 0; j--) {
+      const c = line[j];
+      if (c === ')' || c === ']' || c === '}') stack.push(c);
+      else if (c === '(' || c === '[' || c === '{') {
+        if (stack.length) stack.pop();       // matched an inner close
+        else { if (c === '{') return true; break; } // innermost enclosing opener: { = object spread
+      }
+    }
+  }
+  return false;
+}
+
 // Each rule: a name, the iOS version that first shipped it, and a regex run against comment/string-
 // stripped source. Patterns are chosen to be specific to code syntax (not prose).
 export const RULES = [
@@ -22,7 +43,7 @@ export const RULES = [
   { name: 'nullish coalescing (??)', since: 'iOS 13.4', re: /\?\?/ },
   { name: 'logical assignment (||= &&= ??=)', since: 'iOS 14', re: /(\|\|=|&&=|\?\?=)/ },
   { name: 'optional catch binding (catch {)', since: 'iOS 11.3', re: /\bcatch\s*\{/ },
-  { name: 'object spread ({ ...x })', since: 'iOS 11.3', re: /\{\s*\.\.\.[\w$]/ },
+  { name: 'object spread/rest ({ ...x } or { a, ...x })', since: 'iOS 11.3', fn: objectSpreadOnLine },
   { name: 'Object.fromEntries', since: 'iOS 12.2', re: /\bObject\.fromEntries\b/ },
   { name: 'Array.flat / flatMap', since: 'iOS 12', re: /\.(flat|flatMap)\s*\(/ },
   { name: 'String.matchAll / replaceAll', since: 'iOS 13 / 13.4', re: /\.(matchAll|replaceAll)\s*\(/ },
@@ -64,7 +85,8 @@ export function scanWeb() {
     const cleanLines = strip(readFileSync(file, 'utf8')).split('\n');
     cleanLines.forEach((clean, i) => {
       for (const rule of RULES) {
-        if (rule.re.test(clean)) violations.push({ file: rel, line: i + 1, rule: rule.name, since: rule.since, text: rawLines[i].trim() });
+        const hit = rule.fn ? rule.fn(clean) : rule.re.test(clean);
+        if (hit) violations.push({ file: rel, line: i + 1, rule: rule.name, since: rule.since, text: rawLines[i].trim() });
       }
     });
   }

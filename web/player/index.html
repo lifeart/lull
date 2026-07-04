@@ -62,6 +62,9 @@
     <div id="overlayText" class="big">Tap anywhere to resume the sound</div>
   </div>
 
+  <!-- Classic script FIRST: installs the on-screen error bar so a module parse/eval error (or any
+       silent throw) is visible on an old iPhone with no console. Must precede the module. -->
+  <script src="../errbar.js"></script>
   <script type="module" src="player.js"></script>
 </body>
 </html>

@@ -28,9 +28,17 @@ function urlName() {
 }
 let friendlyName = urlName() || localStorage.getItem('mp.name') || '';
 
-const caps = detectCaps();
-const tier = tierFromCaps(caps);
-caps.tier = tier;
+// Runs at module load. If capability detection ever throws on an old engine it must NOT kill the
+// whole module (that would silently un-wire the Arm button); fall back to LEGACY and surface it.
+let caps, tier;
+try {
+  caps = detectCaps();
+  tier = tierFromCaps(caps);
+  caps.tier = tier;
+} catch (e) {
+  if (window.__lullError) window.__lullError('detectCaps failed: ' + (e && e.stack ? e.stack : e));
+  caps = {}; tier = tierFromCaps(caps); caps.tier = tier; // {} → LEGACY
+}
 
 let engine = null;
 const monitor = new Monitor(); // baby-monitor "cry meter" (M8a) — opt-in, screen-on only
@@ -198,6 +206,7 @@ async function armFromGesture() {
     armed = false;
     console.error('arm failed', e);
     $('armError').textContent = 'Could not start audio: ' + e.message + ' — tap again.';
+    if (window.__lullError) window.__lullError('Arm failed: ' + (e && e.stack ? e.stack : e)); // visible on old iOS
   }
 }
 
@@ -274,6 +283,13 @@ async function toggleMonitor() {
   else {
     const ok = await monitor.start(); // needs the tap's user-activation for iOS mic permission
     localStorage.setItem('mp.monitor', ok ? '1' : '0'); // renderMonitor() surfaces monitor.lastError on failure
+    if (!ok) {
+      // Make the failure UNMISSABLE (the "Start baby monitor does nothing" report): why it didn't run.
+      const a = monitor.availability();
+      const why = monitor.lastError || a.reason || 'unknown';
+      console.warn('[monitor] not started:', why, a);
+      if (window.__lullError) window.__lullError('Baby monitor did not start — ' + why + (a.note ? (' · ' + a.note) : ''));
+    }
   }
   renderMonitor();
   report();
@@ -338,10 +354,17 @@ function buildHardening() {
 
 // --- boot ---
 (async function boot() {
-  await loadLibrary();
+ try {
+  // Wire EVERY primary control synchronously FIRST — before any await or optional setup — so a slow
+  // library fetch or a later failure can't leave a button dead ("Arm/Start does nothing"). (finding: silent errors)
+  $('armBtn').addEventListener('click', armFromGesture);
+  $('monitorToggle').addEventListener('click', toggleMonitor);
+  $('overlay').addEventListener('click', resumeFromGesture);
+  $('overlay').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') resumeFromGesture(); });
+  wireRecovery();
   $('name').value = friendlyName;
   buildHardening();
-  $('armBtn').addEventListener('click', armFromGesture);
+  renderMonitor();
   const tokenInput = $('tokenInput'); // in-UI access token (alternative to the #t= link); read by authToken() on connect
   if (tokenInput) {
     try { tokenInput.value = localStorage.getItem('mp.token') || ''; } catch (_e) { /* storage blocked */ }
@@ -350,13 +373,13 @@ function buildHardening() {
       try { v ? localStorage.setItem('mp.token', v) : localStorage.removeItem('mp.token'); } catch (e) { console.warn('token save blocked', e); }
     });
   }
-  $('monitorToggle').addEventListener('click', toggleMonitor);
-  $('overlay').addEventListener('click', resumeFromGesture);
-  $('overlay').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') resumeFromGesture(); });
-  wireRecovery();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch((e) => console.warn('sw reg failed', e));
   }
+  await loadLibrary(); // last: needs the network; the controls above already work without it
   render();
-  renderMonitor();
+ } catch (e) {
+  console.error('boot failed', e);
+  if (window.__lullError) window.__lullError('Boot failed: ' + (e && e.stack ? e.stack : e));
+ }
 })();

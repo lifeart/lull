@@ -108,7 +108,7 @@ function timerFieldsForKey(key) {
 }
 function startDevice(deviceId) {
   const f = timerFieldsForKey(rememberedTimerKey(deviceId) || DEFAULT_TIMER_KEY); // default ON unless 'off'
-  sendCommand(deviceId, f ? { verb: VERBS.START, ...f } : { verb: VERBS.START });
+  sendCommand(deviceId, f ? Object.assign({ verb: VERBS.START }, f) : { verb: VERBS.START });
 }
 
 function onMessage(msg) {
@@ -175,7 +175,7 @@ function reconcileAlarms(next) {
 // --- commands with ACK tracking ---
 function sendCommand(deviceId, fields, kind = 'command') {
   primeAlarm();
-  const cmd = makeCommand({ target: deviceId, ...fields });
+  const cmd = makeCommand(Object.assign({ target: deviceId }, fields));
   const timer = setTimeout(() => onAckTimeout(cmd.cmdId), ACK_TIMEOUT_MS);
   pending.set(cmd.cmdId, { deviceId, timer, kind });
   send(cmd);
@@ -370,7 +370,7 @@ function makeCard(deviceId, tier, caps) {
   const addTimer = (key, label, fields) => {
     const b = chipBtn(label, () => {
       setRememberedTimerKey(deviceId, key); // remember the choice (P1) — incl. 'off', so unset ≠ off
-      sendCommand(deviceId, { verb: VERBS.SET_TIMER, ...fields() });
+      sendCommand(deviceId, Object.assign({ verb: VERBS.SET_TIMER }, fields()));
       paintTimerChips();
     });
     refs.timerChips.set(key, b);

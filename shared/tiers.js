@@ -4,6 +4,16 @@
 
 import { TIERS, tierFromCaps, usesGain, foregroundVolume } from './protocol.js';
 
+// Installed to the Home Screen (standalone). matchMedia with an unknown feature is guarded because a
+// very old WebKit can throw on an unrecognized media query rather than returning no-match.
+function isStandalone(win, nav) {
+  if (nav && nav.standalone === true) return true;
+  try {
+    if (typeof win.matchMedia === 'function' && win.matchMedia('(display-mode: standalone)').matches) return true;
+  } catch (e) { /* old engine — treat as not-standalone */ }
+  return false;
+}
+
 // Feature-detect on the device. NEVER version-sniff the user agent.
 export function detectCaps() {
   const nav = typeof navigator !== 'undefined' ? navigator : {};
@@ -23,9 +33,7 @@ export function detectCaps() {
     mediaSession: typeof nav === 'object' && 'mediaSession' in nav, // iOS 15+
     wakeLock: typeof nav === 'object' && 'wakeLock' in nav, // iOS 16.4+ (PWA: 18.4+)
     serviceWorker: typeof nav === 'object' && 'serviceWorker' in nav,
-    standalone:
-      (typeof win.matchMedia === 'function' && win.matchMedia('(display-mode: standalone)').matches) ||
-      nav.standalone === true,
+    standalone: isStandalone(win, nav),
   };
 }
 
