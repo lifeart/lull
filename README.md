@@ -1,90 +1,139 @@
-# Lull
+<div align="center">
 
-Turn old iPhones/iPads on your home network into **remotely-controlled speakers** — built entirely in web tech (no native app per iOS version). Primary use: **start/stop/adjust white noise for a child from your own phone.**
+# 🌙 Lull
 
-> **New here?** Start with [`docs/HANDOFF.md`](docs/HANDOFF.md) — status, how to run/test/deploy, architecture map, invariants, honest limits, and next steps.
+**Turn the old iPhones and iPads in your drawer into nursery white‑noise speakers you run from your own phone.**
 
-> **🔧 Live demo (no install):** the Player and Controller PWAs run on GitHub Pages against an
-> **in-browser mock hub** — a leader-elected `BroadcastChannel` hub running the project's real
-> shared protocol, so the two apps genuinely talk to each other with no server. Arm the Speaker,
-> then drive it from the Controller. Build it locally with `npm run build:demo` (output in `_site/`,
-> serve over any static server); it deploys automatically via [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
-> The demo shows the control plane, tiers, timer, and parent-phone alarm; it can't reproduce true
-> iOS background/lock behavior (that needs a real device — see the limits below).
+Web tech only — no App Store, no native build, nothing to install. Open it, tap once, there's sound.
 
-> Status: **feature-complete and production-hardened** (hub + Player PWA + Controller PWA, "always-audible" model with capability-gated remote volume on modern devices), through multiple adversarial review rounds; **113 tests green (88 node + 25 real-browser)**, container deploy path verified end-to-end. Both apps install as standalone PWAs. The one remaining unknown is the real-iOS-hardware overnight soak. See [`docs/DESIGN.md`](docs/DESIGN.md) for the full architecture and the iOS constraints that shape it, [`docs/DEPLOY.md`](docs/DEPLOY.md) for deployment + auth, and [`docs/HANDOFF.md`](docs/HANDOFF.md) for current status.
+[**▶ Try the live demo**](https://lifeart.github.io/lull/) &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Run it](#run-it) &nbsp;·&nbsp; [How it works](#how-it-works) &nbsp;·&nbsp; [Deploy](docs/DEPLOY.md)
+
+[![CI](https://github.com/lifeart/lull/actions/workflows/ci.yml/badge.svg)](https://github.com/lifeart/lull/actions/workflows/ci.yml)
+![runtime deps: 1](https://img.shields.io/badge/runtime%20deps-1%20(ws)-brightgreen)
+![PWA](https://img.shields.io/badge/PWA-installable-5aa2ff)
+![tests](https://img.shields.io/badge/tests-113%20green-brightgreen)
+![web tech only](https://img.shields.io/badge/native%20app-none-lightgrey)
+
+</div>
+
+<img src="demo/shots/controller-top-light.png" alt="Lull controller — one-tap bedtime, rooms, sounds, sleep timer" width="290" align="right" />
+
+## What it is
+
+A phone that's "too old for the App Store" is still a perfectly good speaker. **Lull** gives it a job: arm each old device once with a tap, and it becomes a nursery white‑noise speaker you control from your current phone — start, stop, volume, sleep timer, switch sounds, one tap for every room.
+
+**No account. No subscription. No cookie banner. No "welcome, let us tell you our story."** At 3 a.m. you shouldn't have to search a library, dismiss three pop‑ups, and accept a privacy policy to calm a crying baby. You tap once — there's sound.
+
+It runs on one codebase from **iOS 12 to today** (feature‑detected), needs **one tiny always‑on hub** (a single Node process, one dependency), and keeps the audio *honest* — which is the whole trick, below.
+
+## Features
+
+- 🔊 **Always‑audible by design** — a seamless looping `<audio>` file that keeps playing through screen lock (the one iOS‑safe audio path); your phone starts / stops / fades / times it remotely.
+- 🎚 **10 sounds, loudness‑matched** — white · pink · brown noise + rain · ocean · wind · fireplace · fan · womb · heartbeat, all normalized to **−16 LUFS** so switching never jumps in volume. **Pink is the default.**
+- 🌧 **Real recordings, optionally** — `npm run fetch:real` overlays vetted **CC0 / public‑domain field recordings** for rain / ocean / fire / wind (downloaded audio stays out of git; the synthesized loops are the offline fallback).
+- ⏲ **Bedtime in one tap** — start every room at once; a **~45‑min wind‑down sleep timer is on by default**.
+- 👶 **Baby monitor** — an opt‑in mic “cry meter” sends the room's sound level back to your phone, with an alert on a sustained spike.
+- 🛎 **Fails loud, on the *awake* phone** — every command must ACK within ~3 s; a bedtime pre‑flight won't show green until every room answers; a dead speaker sets off a loud alarm on *your* phone, so 3 a.m. failures are caught before bed.
+- 📱 **Installable PWA** — add each app to the home screen; runs standalone (no browser chrome).
+- ➕ **Your own sounds** — drag‑drop or upload a lullaby/recording; it becomes a selectable sound on every device.
+- 🧩 **One tiny hub** — a single Node process, one runtime dependency (`ws`); runs on a Raspberry Pi / NAS / spare laptop, or reach it from anywhere via a **Cloudflare Tunnel**.
+- 🔐 **Locked down** — Origin allowlist + an `MP_TOKEN` shared secret gate every command and upload; the hub **fails closed** on a public bind.
+- 🧪 **113 tests** (88 Node + 25 real‑browser Playwright), green in CI on every push.
 
 ## The one thing to understand first
 
-iOS **will not let a web page start audio on a locked, idle device from a network message or a push notification.** Audio needs a one-time user *tap* to unlock, and a backgrounded Safari tab gets suspended (killing its network connection) unless audio is *actively playing*.
+iOS **will not let a web page start audio on a locked, idle device from a network message or a push.** Audio needs a one‑time user *tap* to unlock, and a backgrounded Safari tab gets suspended (killing its connection) unless audio is *actively playing*.
 
-So the design does **not** try to "wake a silent iPad and make it play." Instead:
+So Lull does **not** try to "wake a silent iPad and make it play." Instead:
 
-- You **arm each device once** with a single tap. That tap unlocks audio and starts a seamless looping noise file that **keeps playing** (audibly, or silently on capable hardware).
-- After that, your phone remotely **starts / stops / fades / sets a sleep-timer** on it, because the always-running audio keeps the device reachable.
-- Reliability comes from **detecting failures on your (awake) phone and alarming you**, not from magically reviving a dead nursery device at 3 a.m.
+1. **Arm each device once** with a single tap — that unlocks audio and starts a seamless loop that **keeps playing**.
+2. Your phone then **starts / stops / fades / sets a sleep timer** remotely, because the always‑running audio keeps the device reachable.
+3. Reliability comes from **detecting failures on your (awake) phone and alarming you** — never from magically reviving a dead nursery device at 3 a.m.
 
-## Architecture at a glance
-
-```
-  Parent's phone                Always-on hub               Old iPad (nursery)
- ┌───────────────┐   command   ┌───────────────┐  command  ┌────────────────┐
- │ Controller PWA │──────────▶ │  Hub server    │─────────▶│  Player PWA     │
- │ (start/stop,   │◀────────── │  • HTTPS (TLS)  │◀─────────│  • looping <audio>
- │  volume, timer,│   state     │  • WS relay     │   state  │  • Web Audio gain
- │  alarms)       │            │  • desired/     │          │  • MediaSession  │
- └───────────────┘            │    reported     │          │  • auto-reconnect│
-                              │    state store  │          └────────────────┘
-                              │  • bakes noise  │
-                              └───────────────┘
-```
-
-- **Hub** — a tiny always-on box (Raspberry Pi / NAS / Mac mini / spare laptop) that serves the two web apps over real HTTPS, relays commands, and is the single source of truth for state.
-- **Player PWA** — runs on each old iPhone/iPad; the "speaker."
-- **Controller PWA** — runs on the parent's current phone; the remote.
+That honesty *is* the design. Pretending otherwise would just be a product that fails at the worst possible moment.
 
 ## Run it
 
 ```bash
-npm install                       # runtime dep: ws
-npm run bake                      # generate seamless white/pink/brown loops + PNG app icons
-npm start                         # hub on http://localhost:8080
-npm test                          # 88 node tests: protocol, seams, audio engine, hub, static, auth, store, hardening
-npx playwright install chromium   # once, for the browser e2e
-npm run test:e2e                  # 25 real-browser tests: arm, start/stop, volume, timer, alarm, soundscape, upload, reorder, forget
+npm install                       # one runtime dependency: ws
+npm run bake                      # 10 seamless −16 LUFS loops + PNG app icons (pure Node, no ffmpeg)
+npm start                         # hub on http://localhost:8080   (localhost is a secure context)
 ```
 
-**Sounds:** white / pink / brown noise **plus ambient loops — rain, ocean, wind, fireplace, fan, womb,
-heartbeat** — are built in (`npm run bake`, zero-dep, no license), all **loudness-matched to −16 LUFS**
-so switching never jumps in volume; **pink** is the default. Optionally, `npm run fetch:real` swaps in
-**real CC0/Public-Domain field recordings** for rain/ocean/fire/wind (downloaded audio stays gitignored;
-synthesis is the offline fallback). A **sleep timer winds down by default (~45 min)**. From the
-Controller's **Sounds** card you can
-add your own audio (a lullaby, a recording; ≤30 MB) with **＋ Add sound** or by **dragging a file
-onto the card** — it's stored on the hub and becomes a selectable sound on every device, and you can
-**rename or delete** it under “Your sounds”. Devices show a **now-playing waveform** while playing.
-Switching a sound while a device is backgrounded is deferred until it's foregrounded (iOS-safe).
+Open **`http://localhost:8080/player/`** in one tab → name it, tap **Arm**. Open **`/controller/`** in another → drive it: start/stop, volume, timer, switch sounds.
 
-**Security:** the control channel (WebSocket **and** the state-changing `/api` routes) is protected
-by an Origin allowlist plus an `MP_TOKEN` shared secret. The hub **fails closed**: bound to a real
-network interface it refuses to start without `MP_TOKEN` (set `MP_ALLOW_OPEN=1` to override on a
-trusted LAN; `localhost` is exempt for dev). Generate one with `openssl rand -hex 24` and open the
-apps once with `…/controller/#t=YOUR_TOKEN` (persists to the device). Uploads are streamed to disk
-with a size cap and concurrency limit; the container runs as a non-root user with a health check.
-For deployment topologies (LAN, Cloudflare Tunnel for remote/public access, and the "GitHub Pages +
-WebRTC vs. standalone hub" trade-offs) plus public-exposure auth, see [`docs/DEPLOY.md`](docs/DEPLOY.md).
+```bash
+npm test                          # 88 Node tests (protocol, seams, audio engine, hub, auth, store…)
+npx playwright install chromium   # once
+npm run test:e2e                  # 25 real-browser tests
+npm run fetch:real                # (optional) swap in real CC0/PD recordings for rain/ocean/fire/wind
+npm run serve:demo                # build + serve the static demo locally
+```
 
-- On this machine: open `http://localhost:8080/controller/` and, in another tab, `http://localhost:8080/player/` → name it, tap **Arm**, then drive it from the controller. (`localhost` is a secure context, so it all works without certs on the dev box.)
-- On a **real iPhone/iPad** you need HTTPS (service worker / audioSession / wake lock require a secure context). Set up Caddy + DNS-01 + split-horizon DNS — see [`deploy/`](deploy/) and [`docs/DESIGN.md`](docs/DESIGN.md) §1.6. Then harden each device ([`docs/HARDENING.md`](docs/HARDENING.md)) and run the [overnight test](docs/OVERNIGHT-TEST.md) before trusting it.
+## How it works
 
-**Delivery beyond the built-in sounds:** HLS (send any/long audio, same background-safe path) and WebRTC live "talk to / listen into" the room are analyzed in `docs/DESIGN.md` §12 — both reuse this same hub, protocol, and safety net. A WebRTC **transport** prototype (the unmodified apps running peer-to-peer over an `RTCDataChannel`, no WebSocket relay) already ships in the demo at **`/rtc/`**; see [`docs/DEPLOY.md`](docs/DEPLOY.md) for the "GitHub Pages + WebRTC vs. standalone hub" trade-offs.
+```
+  Parent's phone                Always-on hub               Old iPad (nursery)
+ ┌───────────────┐   command   ┌────────────────┐  command  ┌──────────────────┐
+ │ Controller PWA │──────────▶ │  Hub (Node/ws)  │─────────▶ │  Player PWA       │
+ │ start · stop   │            │  • static + WS  │           │  • looping <audio>│
+ │ volume · timer │◀────────── │  • desired /    │◀───────── │  • Web Audio gain │
+ │ alarms         │   state     │    reported     │   state   │  • MediaSession   │
+ └───────────────┘            │  • sleep timer  │           │  • auto-reconnect │
+                              └────────────────┘           └──────────────────┘
+```
+
+- **Hub** — a tiny always‑on box; serves both apps over HTTPS, relays commands, and is the single source of truth (`desired` intent vs. `reported` telemetry, stored as an atomic JSON file).
+- **Player PWA** (`/player/`) — the "speaker" on each old device.
+- **Controller PWA** (`/controller/`) — the remote on the parent's phone.
+- **Shared protocol** (`shared/protocol.js`) — one wire contract imported by all three, so no layer can disagree on verbs/units/state.
+
+The full architecture, the verified iOS constraints, and the capability tiers (iOS 12 → 18) are in [`docs/DESIGN.md`](docs/DESIGN.md).
+
+## Live demo
+
+The [demo](https://lifeart.github.io/lull/) runs the **unmodified apps against an in‑browser mock hub** (a leader‑elected `BroadcastChannel` hub running the real protocol) — so the two apps genuinely talk to each other with **no server**:
+
+- **`/`** — the intro + an embedded, playable Speaker + Controller.
+- **`/live/`** — the two apps full‑screen.
+- **`/rtc/`** — the same apps running **peer‑to‑peer over a real `RTCDataChannel`** (a WebRTC‑transport prototype).
+
+It demonstrates the control plane, tiers, timer, and parent‑phone alarm; it can't reproduce true iOS background/lock behavior — that needs a real device (see limits below).
+
+## Deploy
+
+- **On your LAN** — run the hub on an always‑on box; open it on your devices over HTTPS.
+- **From anywhere** — a **Cloudflare Tunnel** gives it a public HTTPS URL with no port‑forwarding.
+- **Auth** — set `MP_TOKEN` (`openssl rand -hex 24`) and open the apps once with `…/controller/#t=YOUR_TOKEN` (remembered per device); the hub won't start open on a public interface.
+
+Full topology matrix (LAN · tunnel · "GitHub Pages + WebRTC vs. a standalone hub"), public‑exposure auth, and a step‑by‑step Synology recipe are in **[`docs/DEPLOY.md`](docs/DEPLOY.md)** and [`docs/DEPLOY-SYNOLOGY.md`](docs/DEPLOY-SYNOLOGY.md).
+
+## Honest limits
+
+- **No cold‑start from silence on a locked old device.** Over an 8‑hour night iOS can reclaim an idle tab; after any reload, audio is re‑locked and needs a physical tap no remote command can supply. Lull is built around this, not against it.
+- **Old/1 GB devices are best‑effort / attended.** Capability tiers degrade honestly; the app tells you what a given device can and can't do.
+- **Not yet run on a real‑iOS overnight soak** — the one make‑or‑break unknown; harden each device ([`docs/HARDENING.md`](docs/HARDENING.md)) and run the [overnight test](docs/OVERNIGHT-TEST.md) before trusting it unattended.
 
 ## Why not AirPlay / Chromecast / a native app?
 
-- **iOS devices can't receive AirPlay** — they only *send* it. You cannot AirPlay *to* an old iPhone.
-- **Native app** = rebuild/re-sign per iOS version and per device — exactly what you want to avoid.
-- **Web tech** works on every iOS from ~12 to current from one codebase, at the cost of the background-audio constraints documented in [`docs/DESIGN.md`](docs/DESIGN.md).
+- **iOS devices can't *receive* AirPlay** — they only send it. You can't AirPlay *to* an old iPhone.
+- **A native app** means rebuilding and re‑signing per iOS version and device — exactly what old hardware makes painful.
+- **Web tech** covers iOS ~12 → current from one codebase; the price is the background‑audio constraints above, which the design turns into a feature.
 
-## Closest prior art (worth stealing from)
+*Prior art worth knowing:* **Snapcast + Snapweb** and **Home Assistant + Music Assistant** already solve server‑controlled browser audio if you're happy to self‑host them. Lull is the from‑scratch, purpose‑built take on the old‑iOS‑as‑nursery‑speaker case.
 
-**Snapcast + its browser client "Snapweb"** already turns any browser into a server-controlled, time-synced audio renderer, and **Home Assistant + Music Assistant** already provide a remote-control plane. If you're open to self-hosting those, a large part of this is solved — see the "Prior art" section in the design doc. Lull is the from-scratch, purpose-built alternative focused on the old-iOS-as-nursery-speaker case.
+## Docs
+
+| Doc | What's in it |
+|---|---|
+| [`docs/DESIGN.md`](docs/DESIGN.md) | Architecture, the iOS constraints that shape it, capability tiers, the protocol |
+| [`docs/DEPLOY.md`](docs/DEPLOY.md) | Deployment matrix, tunnel + public‑exposure auth |
+| [`docs/HANDOFF.md`](docs/HANDOFF.md) | Current status, run/test/deploy, architecture map, invariants |
+| [`docs/HARDENING.md`](docs/HARDENING.md) · [`docs/OVERNIGHT-TEST.md`](docs/OVERNIGHT-TEST.md) | Per‑device setup + the overnight soak gate |
+| [`docs/RESEARCH-SOUND-SCIENCE.md`](docs/RESEARCH-SOUND-SCIENCE.md) | Evidence‑based baby‑sleep sounds + synthesis recipes |
+
+---
+
+<div align="center">
+Personal project, shared as‑is. Give the old phones in your drawer a second life. 🌙
+</div>
