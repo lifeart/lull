@@ -5,15 +5,15 @@
 #   • Cloudflare Tunnel (cloudflared below)    → trusted TLS, no port-forward, iOS 12–14, remote access
 #
 # Container Manager → Project → Create → upload this file (put the repo on the NAS so `build:` works,
-# or pre-build the image and replace `build:` with `image: mesh-playback-hub:latest`).
+# or pre-build the image and replace `build:` with `image: lull-hub:latest`).
 
 services:
   hub:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    # image: mesh-playback-hub:latest   # ← use instead of build: if you pre-built the image
-    container_name: mesh-playback-hub
+    # image: lull-hub:latest   # ← use instead of build: if you pre-built the image
+    container_name: lull-hub
     ports:
       - "8080:8080" # host:container — reach the hub at http://<nas-ip>:8080 (or proxy 443 → here)
     environment:
@@ -32,8 +32,8 @@ services:
     volumes:
       # Bind-mount a Synology shared folder. The container fixes ownership on boot (runs its
       # entrypoint as root, chowns /data, then drops to the unprivileged `node` user), so Synology's
-      # volume ownership doesn't matter. Create the folder first (e.g. /docker/mesh-playback).
-      - /volume1/docker/mesh-playback/data:/data
+      # volume ownership doesn't matter. Create the folder first (e.g. /docker/lull).
+      - /volume1/docker/lull/data:/data
     restart: unless-stopped
 
   # --- OPTIONAL: Cloudflare Tunnel for trusted TLS with no port-forwarding (Option C in the guide) ---
@@ -44,7 +44,7 @@ services:
   # With a pure tunnel you can also remove the hub's `ports:` mapping — nothing needs to be exposed.
   # cloudflared:
   #   image: cloudflare/cloudflared:latest
-  #   container_name: mesh-playback-cloudflared
+  #   container_name: lull-cloudflared
   #   command: tunnel --no-autoupdate run
   #   environment:
   #     - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}

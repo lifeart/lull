@@ -1,4 +1,4 @@
-# mesh-playback — Baby-monitor ("radio-nanny") mode: feasibility report
+# Lull — Baby-monitor ("radio-nanny") mode: feasibility report
 
 > Output of an iOS-web / WebRTC feasibility exploration, cited to WebKit bug trackers and the W3C
 > Audio Session API. "mic" = the nursery device's microphone.

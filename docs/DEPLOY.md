@@ -1,4 +1,4 @@
-# Deploying mesh-playback
+# Deploying Lull
 
 ## Architecture in one line
 

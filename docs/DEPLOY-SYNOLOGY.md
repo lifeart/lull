@@ -9,7 +9,7 @@ Use [`deploy/docker-compose.synology.yml`](../deploy/docker-compose.synology.yml
 
 ## Do you actually need TLS?
 
-The core of mesh-playback — a looping white-noise `<audio>` element that keeps playing while the
+The core of Lull — a looping white-noise `<audio>` element that keeps playing while the
 screen is locked, driven remotely over WebSocket (start / stop / sleep-timer / soundscape) with the
 parent-phone failure alarm — **works over plain `http://` in a Safari tab.** Plain `<audio>` playback,
 its lock-screen survival in a *tab*, and `ws://` do not require a secure context.
@@ -44,7 +44,7 @@ If you want the modern features, use HTTPS. On a NAS you have three low-friction
 ## Option A — Plain HTTP on the LAN (simplest)
 
 1. **Container Manager → Project → Create.** Put the repo on the NAS (or pre-build the image) and use
-   `deploy/docker-compose.synology.yml`. Create the data folder first, e.g. `/docker/mesh-playback`.
+   `deploy/docker-compose.synology.yml`. Create the data folder first, e.g. `/docker/lull`.
 2. Set a token (recommended even on the LAN): in the project's environment, `MP_TOKEN=<openssl rand -hex 24>`.
    Or, for a fully-trusted LAN, `MP_ALLOW_OPEN=1` and no token. (The hub **refuses to start** bound to a
    real interface with neither — that's intentional.)

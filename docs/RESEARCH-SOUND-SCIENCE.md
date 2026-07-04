@@ -6,7 +6,7 @@
 
 # Best-in-Class Procedural Ambient Audio for Infant Sleep — Evidence + Synthesis Recipes
 
-*Research report for mesh-playback. Two audiences: (A) what the evidence says about the best sounds for baby sleep/calm and how to deliver them safely; (B) zero-dependency JS synthesis recipes to make `pipeline/bake.js` sound best-in-class. Every safety number is held to its verified value; peer-reviewed evidence is kept separate from adult-extrapolation and from marketing.*
+*Research report for Lull. Two audiences: (A) what the evidence says about the best sounds for baby sleep/calm and how to deliver them safely; (B) zero-dependency JS synthesis recipes to make `pipeline/bake.js` sound best-in-class. Every safety number is held to its verified value; peer-reviewed evidence is kept separate from adult-extrapolation and from marketing.*
 
 ---
 
@@ -52,7 +52,7 @@
 - **WHO context:** Community Noise Guidelines 1999 — bedroom **≤30 dB LAeq** continuous / **≤45 dB LAmax** single event for good sleep; Night Noise Guidelines 2009 — **Lnight,outside 40 dB** (interim 55). Adult/environmental limits on *unwanted* noise — supportive, not infant-specific.
 - **Karp/SNOO conflict (marketing):** advises briefly raising white noise to ~**85 dB** (a hard cap SNOO "never exceeds," "only a few minutes") to break through active crying, then dropping to ~**65 dB**. This **collides with the 50 dBA sustained-nursery limit** — never present 80–85 dB as a safe standing volume.
 
-### 2b. Concrete recommended defaults for mesh-playback
+### 2b. Concrete recommended defaults for Lull
 | Setting | Recommendation | Basis |
 |---|---|---|
 | **Default sound** | **Pink noise** (broad masking + gentle tilt), with **Womb** surfaced for 0–3 mo, **Brown/Fan** for a warmer low option | Spencer settles on broadband; pink covers speech band (§3) yet less harsh than white; womb defensible only for newborns |

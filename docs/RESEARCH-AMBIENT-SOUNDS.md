@@ -1,4 +1,4 @@
-# mesh-playback — Ambient Sound Library: Research Report + Integration Plan
+# Lull — Ambient Sound Library: Research Report + Integration Plan
 
 > **Shipped (update):** the built-in library now includes **synthesized** ambient loops — rain, ocean,
 > wind, fireplace, fan, womb, heartbeat — generated procedurally in `pipeline/bake.js` (zero deps, no
@@ -253,7 +253,7 @@ Bake into the product:
 ## 8. Risks & open questions (human check before shipping)
 
 - **Freesound API is non-commercial + no-rehost.** Resolved by design: never fetch from the API at
-  install; website-download-once for specific IDs, direct CC0 hosts otherwise. If mesh-playback ever
+  install; website-download-once for specific IDs, direct CC0 hosts otherwise. If Lull ever
   ships commercially, license the API from UPF (`mtg@upf.edu`) or ensure every Freesound file was
   obtained/redistributed purely under its CC0/CC-BY grant.
 - **Per-item license variance (#1 trap).** Freesound licenses are per-upload; the CC0 tag is

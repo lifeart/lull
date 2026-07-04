@@ -1,4 +1,4 @@
-# mesh-playback
+# Lull
 
 Turn old iPhones/iPads on your home network into **remotely-controlled speakers** — built entirely in web tech (no native app per iOS version). Primary use: **start/stop/adjust white noise for a child from your own phone.**
 
@@ -87,4 +87,4 @@ WebRTC vs. standalone hub" trade-offs) plus public-exposure auth, see [`docs/DEP
 
 ## Closest prior art (worth stealing from)
 
-**Snapcast + its browser client "Snapweb"** already turns any browser into a server-controlled, time-synced audio renderer, and **Home Assistant + Music Assistant** already provide a remote-control plane. If you're open to self-hosting those, a large part of this is solved — see the "Prior art" section in the design doc. mesh-playback is the from-scratch, purpose-built alternative focused on the old-iOS-as-nursery-speaker case.
+**Snapcast + its browser client "Snapweb"** already turns any browser into a server-controlled, time-synced audio renderer, and **Home Assistant + Music Assistant** already provide a remote-control plane. If you're open to self-hosting those, a large part of this is solved — see the "Prior art" section in the design doc. Lull is the from-scratch, purpose-built alternative focused on the old-iOS-as-nursery-speaker case.

@@ -1,5 +1,5 @@
 {
-  "name": "mesh-playback Speaker",
+  "name": "Lull Speaker",
   "short_name": "Speaker",
   "description": "Arm this old device as a remotely-controlled white-noise speaker.",
   "start_url": "./",

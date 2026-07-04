@@ -243,7 +243,7 @@ export class AudioEngine {
     if (!('mediaSession' in navigator)) return;
     try {
       navigator.mediaSession.metadata = new window.MediaMetadata({
-        title: 'White noise', artist: 'mesh-playback', album: 'Nursery',
+        title: 'White noise', artist: 'Lull', album: 'Nursery',
       });
       navigator.mediaSession.setActionHandler('play', () => this.onIntent && this.onIntent(VERBS.START));
       navigator.mediaSession.setActionHandler('pause', () => this.onIntent && this.onIntent(VERBS.STOP));

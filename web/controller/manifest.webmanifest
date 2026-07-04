@@ -1,5 +1,5 @@
 {
-  "name": "mesh-playback Controller",
+  "name": "Lull Controller",
   "short_name": "Controller",
   "description": "Control white-noise speakers around the home.",
   "start_url": "./",

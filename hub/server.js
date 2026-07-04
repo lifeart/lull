@@ -1,4 +1,4 @@
-// mesh-playback hub — HTTP static host + WebSocket relay in one small process.
+// Lull hub — HTTP static host + WebSocket relay in one small process.
 //
 // Runs plain HTTP (default :8080). In production, Caddy terminates TLS in front of it so the
 // PWAs get a secure context (required for service workers / audioSession / wake lock). For

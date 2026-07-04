@@ -1,4 +1,4 @@
-# mesh-playback — Design & Research
+# Lull — Design & Research
 
 Remotely play/control audio (primarily **white noise for a child**) on **old iPhones/iPads** on the home LAN, using **web tech only** (no per-iOS-version native builds).
 

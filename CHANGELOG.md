@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to mesh-playback. See [`docs/HANDOFF.md`](docs/HANDOFF.md) for the full,
+All notable changes to Lull. See [`docs/HANDOFF.md`](docs/HANDOFF.md) for the full,
 current picture and [`docs/DESIGN.md`](docs/DESIGN.md) for the architecture and iOS constraints.
 
 ## [0.1.0] — Production-hardened MVP

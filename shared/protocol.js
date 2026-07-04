@@ -1,4 +1,4 @@
-// mesh-playback wire protocol — the ONE shared contract.
+// Lull wire protocol — the ONE shared contract.
 //
 // Imported unchanged by the hub (Node), the Player PWA, and the Controller PWA
 // (served at /shared/protocol.js). This is the single source of truth for

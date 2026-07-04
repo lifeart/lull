@@ -1,4 +1,4 @@
-# mesh-playback — Handoff
+# Lull — Handoff
 
 Everything a new contributor (or a future session) needs to pick this up. Written 2026-07-02.
 
