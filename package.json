@@ -9,6 +9,7 @@
     "start": "node hub/server.js",
     "dev": "node hub/server.js",
     "build:demo": "node pipeline/build-demo.js",
+  "serve:demo": "node pipeline/serve-demo.js",
     "fetch:ambient": "node pipeline/fetch-ambient.js",
   "fetch:real": "node pipeline/fetch-real.js",
     "test": "node --test test/*.test.js",
