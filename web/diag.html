@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lull · Diagnostics</title>
+<style>
+  html,body{margin:0;background:#0b0d12;color:#e7ecf3;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+  .wrap{max-width:720px;margin:0 auto;padding:18px}
+  h1{font-size:20px;margin:0 0 4px}
+  .v{color:#7fd0ff;font:12px ui-monospace,Menlo,monospace}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #1c2230}
+  .k{color:#9fb0c6}
+  .val{font:12px/1.4 ui-monospace,Menlo,monospace;text-align:right;word-break:break-word;max-width:62%}
+  .ok{color:#5fdc8e}.bad{color:#ff6b6b}.warn{color:#ffcf5a}
+  button{-webkit-appearance:none;appearance:none;border:0;border-radius:12px;background:#2b6fff;color:#fff;font:600 16px/1 -apple-system,sans-serif;padding:14px 16px;margin:8px 8px 0 0;cursor:pointer}
+  button.g{background:#243044}
+  pre{white-space:pre-wrap;word-break:break-word;background:#12161f;border:1px solid #232a38;border-radius:10px;padding:10px;font:12px/1.45 ui-monospace,Menlo,monospace;color:#cfe0f3}
+  .sec{margin-top:18px}
+  .hint{color:#9fb0c6;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Lull diagnostics</h1>
+  <div class="v" id="ver">build: (loading…)</div>
+
+  <div class="sec" id="caps"></div>
+
+  <div class="sec">
+    <div class="hint">Tap each and wait — results show below.</div>
+    <button id="bAudio">▶ Test sound</button>
+    <button id="bMic" class="g">🎙 Test microphone</button>
+  </div>
+
+  <div class="sec">
+    <div class="k">Log</div>
+    <pre id="log">—</pre>
+  </div>
+  <p class="hint">Screenshot this whole page and send it back. (Include the model + iOS version if you know it.)</p>
+</div>
+
+<!-- Module test: STATIC imports (parse on iOS 10.3). If the player's module graph has a parse/eval
+     error on this device, __diagMod stays unset and window.onerror captures the detail. -->
+<script type="module">
+  import '/shared/protocol.js';
+  import '/shared/tiers.js';
+  import '/player/audio.js';
+  import '/player/monitor.js';
+  window.__diagMod = 'ok';
+</script>
+
+<!-- Everything else is a CLASSIC ES5 script so it runs even on the oldest Safari and even if the
+     module above fails to load. -->
+<script>
+(function () {
+  var VERSION = 'diag-2026-07-05a';
+  var logEl = document.getElementById('log');
+  var lines = [];
+  function log(s) { lines.push(s); logEl.textContent = lines.join('\n'); }
+  window.addEventListener('error', function (e) {
+    var m = e && (e.error ? (e.error.stack || e.error.message) : e.message) || 'error';
+    if (e && e.filename) m += ' @ ' + e.filename + ':' + (e.lineno || '?');
+    log('window error: ' + m);
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason; log('unhandled rejection: ' + (r && (r.stack || r.message) ? (r.stack || r.message) : r));
+  });
+
+  var nav = navigator, win = window;
+  function has(v) { return v ? 'yes' : 'no'; }
+  function secure() {
+    if (typeof win.isSecureContext === 'boolean') return win.isSecureContext ? 'yes' : 'NO';
+    return (location.protocol === 'https:' || location.hostname === 'localhost') ? 'yes(inferred)' : 'NO';
+  }
+  var md = nav.mediaDevices;
+  var gum = !!(md && md.getUserMedia);
+  var legacyGum = !!(nav.getUserMedia || nav.webkitGetUserMedia || nav.mozGetUserMedia);
+  var audioSession = ('audioSession' in nav);
+  var standalone = (nav.standalone === true) || (typeof win.matchMedia === 'function' && (function(){try{return win.matchMedia('(display-mode: standalone)').matches;}catch(e){return false;}})());
+
+  var rows = [
+    ['User agent', nav.userAgent],
+    ['URL', location.href],
+    ['Secure context', secure()],
+    ['Installed app (standalone)', has(standalone)],
+    ['AudioContext', has(win.AudioContext || win.webkitAudioContext)],
+    ['mediaDevices.getUserMedia', has(gum)],
+    ['legacy getUserMedia', has(legacyGum)],
+    ['navigator.audioSession (iOS 16.4+)', has(audioSession)],
+    ['audioSession.type', audioSession ? String(nav.audioSession.type) : 'n/a'],
+    ['App module graph loads', '(checking…)'],
+  ];
+  var capsEl = document.getElementById('caps');
+  var idx = {};
+  for (var i = 0; i < rows.length; i++) {
+    var d = document.createElement('div'); d.className = 'row';
+    var k = document.createElement('span'); k.className = 'k'; k.textContent = rows[i][0];
+    var v = document.createElement('span'); v.className = 'val'; v.textContent = rows[i][1];
+    var bad = /^(no|NO|n\/a)$/.test(rows[i][1]);
+    if (bad) v.className = 'val bad';
+    d.appendChild(k); d.appendChild(v); capsEl.appendChild(d);
+    idx[rows[i][0]] = v;
+  }
+  document.getElementById('ver').textContent = 'build: ' + VERSION;
+
+  // Poll the module-graph test flag (set by the module script above).
+  var tries = 0;
+  (function poll() {
+    tries++;
+    var cell = idx['App module graph loads'];
+    if (window.__diagMod === 'ok') { cell.textContent = 'YES ✓'; cell.className = 'val ok'; return; }
+    if (tries > 25) { cell.textContent = 'NO — did not load (see Log)'; cell.className = 'val bad'; log('MODULE GRAPH FAILED TO LOAD — the app JS does not run on this device. The window error above (if any) is the reason.'); return; }
+    setTimeout(poll, 200);
+  })();
+
+  // --- Test sound ---
+  document.getElementById('bAudio').addEventListener('click', function () {
+    log('sound: creating <audio> for /player/assets/pink.wav …');
+    try {
+      var a = new Audio('/player/assets/pink.wav');
+      a.loop = true; a.setAttribute('playsinline', ''); a.setAttribute('webkit-playsinline', '');
+      ['loadedmetadata','canplay','playing','stalled','error','waiting'].forEach(function(ev){
+        a.addEventListener(ev, function(){ log('sound: event ' + ev + ' (t=' + a.currentTime.toFixed(2) + ' rs=' + a.readyState + ' err=' + (a.error?a.error.code:'') + ')'); });
+      });
+      var p = a.play();
+      if (p && p.then) p.then(function(){ log('sound: play() resolved — should be audible.'); }, function(e){ log('sound: play() REJECTED — ' + e.name + ': ' + e.message); });
+      else log('sound: play() returned no promise (old Safari) — check if you hear it.');
+      window.__diagAudio = a;
+    } catch (e) { log('sound: threw ' + e.name + ': ' + e.message); }
+  });
+
+  // --- Test microphone (mirrors the baby-monitor path incl. the audioSession fix) ---
+  document.getElementById('bMic').addEventListener('click', function () {
+    log('mic: requesting… (a permission prompt should appear)');
+    if (audioSession) {
+      try { nav.audioSession.type = 'play-and-record'; log('mic: set audioSession.type=play-and-record (was ' + rows[8][1] + ')'); }
+      catch (e) { log('mic: could not set audioSession.type — ' + e.message); }
+    }
+    var settled = false;
+    var t = setTimeout(function(){ if (!settled) log('mic: NO RESPONSE after 12s — getUserMedia is hanging (no prompt). This iOS blocks the mic here.'); }, 12000);
+    function done(msg){ if (settled) return; settled = true; clearTimeout(t); log(msg); }
+    function ask(constraints, label) {
+      var call;
+      if (md && md.getUserMedia) call = md.getUserMedia(constraints);
+      else if (nav.getUserMedia || nav.webkitGetUserMedia) call = new Promise(function(res,rej){ (nav.getUserMedia||nav.webkitGetUserMedia).call(nav, constraints, res, rej); });
+      else { done('mic: no getUserMedia API at all on this device.'); return; }
+      call.then(function(stream){
+        done('mic: GRANTED ✓ (' + label + ') — got ' + (stream.getAudioTracks?stream.getAudioTracks().length:'?') + ' audio track(s). Baby monitor should work.');
+        try { stream.getTracks().forEach(function(tr){ tr.stop(); }); } catch(e){}
+      }, function(e){
+        // Retry once with the plainest constraint (some iOS reject echoCancellation combos).
+        if (label !== 'audio:true') { log('mic: ' + e.name + ' with detailed constraints — retrying {audio:true}…'); ask(true, 'audio:true'); }
+        else done('mic: FAILED — ' + e.name + ': ' + e.message);
+      });
+    }
+    ask({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } }, 'detailed');
+  });
+
+  log('ready. tap the buttons above.');
+})();
+</script>
+</body>
+</html>

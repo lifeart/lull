@@ -1,5 +1,5 @@
 // Controller service worker — shell cache only (network-first), no media handling.
-const SHELL = 'mp-controller-shell-v3';
+const SHELL = 'mp-controller-shell-v4'; // bump → drops the stale-cached shell (old JS) on activate
 const SHELL_PREFIX = 'mp-controller-shell-'; // only touch THIS app's caches on cleanup
 const SHELL_FILES = [
   './', './index.html', './controller.js', './alarm.js', './manifest.webmanifest',
