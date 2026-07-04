@@ -63,7 +63,7 @@ export class AudioEngine {
     });
 
     // Promote the audio session so it plays in the background and OVER the mute switch (16.4+).
-    if ('audioSession' in navigator) {
+    if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
       try { navigator.audioSession.type = 'playback'; } catch (e) { console.warn('audioSession set failed', e); }
     }
 
@@ -240,7 +240,7 @@ export class AudioEngine {
   }
 
   _setupMediaSession() {
-    if (!('mediaSession' in navigator)) return;
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
     try {
       navigator.mediaSession.metadata = new window.MediaMetadata({
         title: 'White noise', artist: 'Lull', album: 'Nursery',
@@ -251,14 +251,14 @@ export class AudioEngine {
   }
 
   _updateMediaSessionState() {
-    if (!('mediaSession' in navigator)) return;
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
     try {
       navigator.mediaSession.playbackState = this.state === STATES.PLAYING ? 'playing' : 'paused';
     } catch { /* older iOS lacks playbackState — non-fatal, handler is what matters */ }
   }
 
   async _acquireWakeLock() {
-    if (!('wakeLock' in navigator)) return;
+    if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
     if (this.wakeLock) return;
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     try {
