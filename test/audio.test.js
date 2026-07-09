@@ -37,6 +37,29 @@ function modernEngine() {
   return eng;
 }
 
+function fakeBufferSrc() {
+  return {
+    buffer: null, loop: false, started: 0, stopped: 0, onended: null,
+    connect() {}, start() { this.started++; }, stop() { this.stopped++; },
+  };
+}
+// GRAPH+buffer engine: the gapless AudioBufferSourceNode path (MODERN, or any non-iOS platform).
+// Bypasses arm()'s real Web Audio + decode; _buf is a stand-in for a decoded AudioBuffer.
+function bufferEngine(tier = TIERS.MODERN, caps = { audioSession: true }) {
+  const eng = new AudioEngine({ tier, caps, onState: () => {} });
+  eng.el = fakeEl();
+  eng.gain = { gain: fakeGainParam() };
+  eng.ctx = {
+    state: 'running', currentTime: 0, async resume() { this.state = 'running'; },
+    createBufferSource() { return fakeBufferSrc(); },
+  };
+  eng.useBuffer = true;
+  eng._buf = { duration: 30 }; // truthy stand-in for a decoded buffer
+  eng.currentSoundscape = 'white'; // so a same-sound START doesn't trigger a (real) decode swap
+  eng.armed = true;
+  return eng;
+}
+
 test('MODERN: START plays the element, ramps gain up, reports PLAYING', async () => {
   const eng = modernEngine();
   await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'white' });
@@ -115,7 +138,11 @@ test('MID (element.volume honored): foreground volume; remembered across stop', 
   assert.equal(eng.el.volume, 0.4, 'element.volume set for MID');
   assert.equal(eng.getGain(), 0.4);
   assert.equal(eng.getState(), STATES.PLAYING);
-  assert.equal(eng.ctx, null, 'MID never creates an AudioContext (stays unrouted)');
+  // ELEMENT-mode actuation (no gain node) never creates an AudioContext — this is the unrouted
+  // fallback path (old iOS, or a MID device with no Web Audio at all). On a normal desktop/Android
+  // MID device element.volume IS honored, so arm() takes the gapless GRAPH path instead — covered
+  // by the "GAPLESS: MID desktop …" test above.
+  assert.equal(eng.ctx, null, 'element-mode actuation stays unrouted (no AudioContext)');
   await eng.applyDesired({ verb: VERBS.STOP, gainLinear: 0.4, soundscape: 'white' });
   assert.equal(eng.el.paused, true);
   assert.equal(eng.getState(), STATES.STOPPED);
@@ -151,6 +178,92 @@ test('SET_SOUNDSCAPE on a STOPPED device does not resurrect audio (shouldPlay gu
   assert.equal(eng.el.plays, 0, 'swap on a stopped device must not call play()');
   assert.equal(eng.el.paused, true);
   assert.equal(eng.getState(), STATES.STOPPED);
+});
+
+test('GAPLESS: START starts a LOOPING buffer source, ramps gain, keeps the keep-alive element playing', async () => {
+  const eng = bufferEngine();
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'white' });
+  assert.ok(eng._bufSrc, 'a buffer source drives the sound');
+  assert.equal(eng._bufSrc.loop, true, 'it loops sample-accurately (gapless)');
+  assert.equal(eng._bufSrc.started, 1, 'and is actually started');
+  assert.equal(eng.getState(), STATES.PLAYING);
+  assert.equal(eng.getGain(), 0.3);
+  assert.equal(eng.el.paused, false, 'the muted keep-alive element keeps playing');
+  const targets = eng.gain.gain.calls.filter((c) => c[0] === 'target').map((c) => c[1]);
+  assert.ok(Math.abs(Math.max(...targets) - 0.3) < 1e-6, 'ramps the gain bus to the requested volume');
+});
+
+test('GAPLESS: a paused (muted) keep-alive element does NOT downgrade PLAYING — the buffer is the source', async () => {
+  const eng = bufferEngine();
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'white' });
+  assert.equal(eng.getState(), STATES.PLAYING);
+  eng.el.paused = true; // iOS paused the SILENT keep-alive element; the audible buffer still loops
+  assert.equal(eng.reconcileLiveness(), STATES.PLAYING, 'still audibly playing, so still PLAYING');
+});
+
+test('GAPLESS: a suspended/interrupted context DOES downgrade PLAYING (real silence)', async () => {
+  const eng = bufferEngine();
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'white' });
+  eng.ctx.state = 'interrupted';
+  assert.equal(eng.reconcileLiveness(), STATES.REQUIRES_GESTURE);
+});
+
+test('GAPLESS: losing the buffer source downgrades PLAYING', async () => {
+  const eng = bufferEngine();
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'white' });
+  eng._bufSrc.onended(); // the loop was torn down (interruption); onended nulls _bufSrc
+  assert.equal(eng._bufSrc, null);
+  assert.equal(eng.reconcileLiveness(), STATES.REQUIRES_GESTURE);
+});
+
+test('GAPLESS: STOP ramps to silence but keeps the loop + keep-alive resident (never a wrap gap on restart)', async () => {
+  const eng = bufferEngine();
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'white' });
+  const srcBefore = eng._bufSrc;
+  await eng.applyDesired({ verb: VERBS.STOP, gainLinear: 0.3, soundscape: 'white' });
+  assert.equal(eng.getState(), STATES.STOPPED);
+  assert.equal(eng.getGain(), 0);
+  assert.equal(eng.el.paused, false, 'keep-alive element stays resident');
+  assert.equal(eng._bufSrc, srcBefore, 'the loop keeps running silently (gated by gain), not torn down');
+});
+
+test('GAPLESS: soundscape swap decodes + replaces the loop WITHOUT reloading the element src (background-safe)', async () => {
+  const eng = bufferEngine();
+  eng._loadBuffer = async () => ({ duration: 30 }); // stub fetch+decode
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'white' });
+  const firstSrc = eng._bufSrc;
+  eng.el.src = 'KEEPALIVE_URL';
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'pink', url: 'PINK_URL' });
+  assert.equal(eng.getSoundscape(), 'pink', 'currentSoundscape follows the swap');
+  assert.notEqual(eng._bufSrc, firstSrc, 'a fresh looping source replaced the old one');
+  assert.equal(eng._bufSrc.loop, true);
+  assert.equal(eng.el.src, 'KEEPALIVE_URL', 'the keep-alive element src is NOT reloaded (would kill iOS lock playback)');
+});
+
+test('GAPLESS: MID desktop (element.volume honored) uses foreground volume on the gain bus', async () => {
+  const eng = bufferEngine(TIERS.MID, { elementVolume: true });
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.4, soundscape: 'white' });
+  assert.equal(eng.getState(), STATES.PLAYING);
+  assert.equal(eng.getGain(), 0.4, 'foreground volume actuated via the gain node');
+  const targets = eng.gain.gain.calls.filter((c) => c[0] === 'target').map((c) => c[1]);
+  assert.ok(Math.abs(Math.max(...targets) - 0.4) < 1e-6);
+});
+
+test('_canUseBuffer: gapless where bg Web Audio survives; element fallback on old iOS', () => {
+  const orig = globalThis.window;
+  globalThis.window = { AudioContext: function () {} };
+  try {
+    const modern = new AudioEngine({ tier: TIERS.MODERN, caps: { audioSession: true }, onState() {} });
+    assert.equal(modern._canUseBuffer(), true, 'MODERN (audioSession=playback survives lock) → gapless');
+    const desktop = new AudioEngine({ tier: TIERS.MID, caps: { elementVolume: true }, onState() {} });
+    assert.equal(desktop._canUseBuffer(), true, 'desktop/Android (element.volume honored ⇒ not iOS) → gapless');
+    const oldIosMid = new AudioEngine({ tier: TIERS.MID, caps: { elementVolume: false }, onState() {} });
+    assert.equal(oldIosMid._canUseBuffer(), false, 'old iOS MID → keep the lock-surviving <audio> loop');
+    const legacy = new AudioEngine({ tier: TIERS.LEGACY, caps: {}, onState() {} });
+    assert.equal(legacy._canUseBuffer(), false, 'old iOS LEGACY → keep the lock-surviving <audio> loop');
+    globalThis.window = {}; // no AudioContext at all
+    assert.equal(modern._canUseBuffer(), false, 'no Web Audio → element loop regardless of tier');
+  } finally { globalThis.window = orig; }
 });
 
 test('applyDesired is a no-op when not armed', async () => {

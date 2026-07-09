@@ -1,11 +1,23 @@
 // Player audio engine. Encapsulates every iOS audio gotcha behind applyDesired().
 //
-// The noise is a plain looping <audio> element. On LEGACY/MID it is UNROUTED — the guaranteed
-// background/lock-survivable substrate at a fixed hardware volume. On MODERN we route it through
-// a GainNode for remote volume/fades; that routed graph's background survival relies on
-// audioSession.type='playback' (16.4+, best-effort), NOT on being unrouted — and recover()
-// downgrades to REQUIRES_GESTURE (which alarms the parent) if the context can't stay running.
-// So remote volume on MODERN is a best-effort enhancement, never a background guarantee.
+// SEAMLESS LOOPING. `<audio loop>` re-buffers at the wrap point, so its loop has an audible seam
+// (a periodic silence gap) — the very thing a white-noise app must not have. Where Web Audio can
+// stay alive in the background we therefore play the loop as an AudioBufferSourceNode with
+// loop=true: the wrap happens sample-accurately in the native audio-render thread, so it stays
+// gapless even while the JS main thread is frozen on a locked screen. Where Web Audio would be
+// suspended on lock (old iOS) we FALL BACK to the plain unrouted `<audio loop>`, because a
+// (near-seamless) WAV loop that survives the lock beats a gapless one that goes silent. The
+// decision is `_canUseBuffer()` — feature-detected, never version-sniffed.
+//
+// Two playback shapes, chosen at arm():
+//   • GRAPH mode (a GainNode exists): audible = the looping buffer (or, as a decode-failure
+//     fallback, the element) → gain → destination. Used on MODERN (remote volume + fades, kept
+//     alive by audioSession='playback', 16.4+) and on any non-iOS platform (desktop/Android —
+//     proven by element.volume being honored). The `<audio>` element is kept PLAYING but routed
+//     through a muted gain purely as a liveness signal + iOS interruption detector + keep-alive.
+//   • ELEMENT mode (no GainNode): the UNROUTED `<audio loop>` at fixed/foreground volume — the
+//     guaranteed background/lock-survivable substrate on old iOS (LEGACY, and MID without
+//     element.volume). This is the compat fallback and is byte-for-byte the pre-existing path.
 // (docs/DESIGN.md §1.2–1.4)
 
 // Relative specifier resolves to /shared/protocol.js in the browser (../.. clamps at origin
@@ -15,13 +27,19 @@ import { STATES, TIERS, VERBS, usesGain, foregroundVolume, clampGain } from '../
 export class AudioEngine {
   constructor({ tier, caps, onState }) {
     this.tier = tier;
+    this.caps = caps || {};
     // MID foreground volume via element.volume — only where the device actually HONORS it
     // (detected by a probe in detectCaps); old iOS ignores element.volume, so it's excluded.
-    this.fgVolume = foregroundVolume(tier) && !!(caps && caps.elementVolume);
+    this.fgVolume = foregroundVolume(tier) && !!this.caps.elementVolume;
     this.onState = onState || (() => {});
     this.el = null;
     this.ctx = null;
-    this.gain = null;
+    this.gain = null;      // audible bus (GRAPH mode only); its presence IS the mode flag
+    this.useBuffer = false; // audible source is a gapless AudioBufferSourceNode (vs the element)
+    this._elSrc = null;    // MediaElementSource (GRAPH mode) — kept referenced so it isn't GC'd
+    this._elMute = null;   // gain=0 sink for the keep-alive element when the buffer is audible
+    this._buf = null;      // decoded AudioBuffer of the current soundscape
+    this._bufSrc = null;   // the live looping AudioBufferSourceNode (null ⇒ not looping)
     this.armed = false;
     this.state = STATES.ARMING;
     this.currentGain = 0;
@@ -45,7 +63,17 @@ export class AudioEngine {
     // resident) or a device that is actually PLAYING. Never resurrect a deliberately STOPPED
     // non-gain element (the "never resurrect noise" invariant).
     const shouldSound = () => this.armed && this.state !== STATES.ERROR && (usesGain(this.tier) || this.state === STATES.PLAYING);
-    el.addEventListener('error', () => this._fail('audio element error'));
+    el.addEventListener('error', () => {
+      // In GRAPH+buffer mode the element is only a MUTED keep-alive; the audible sound is the buffer,
+      // so a keep-alive hiccup must not report ERROR (a false alarm) while audio is actually flowing.
+      // Just re-verify liveness. In ELEMENT mode the element IS the audio, so an error is a real fail.
+      if (this.useBuffer) {
+        console.warn('keep-alive element error (audible buffer is unaffected)');
+        const before = this.state; this.reconcileLiveness(); if (this.state !== before) this._emit();
+      } else {
+        this._fail('audio element error');
+      }
+    });
     // 'stalled' is a transient network hiccup (very common on iOS during lock) — recover, do NOT
     // treat as a permanent error that the automatic recovery path can never clear.
     el.addEventListener('stalled', () => { if (shouldSound()) el.play().catch(() => {}); });
@@ -69,8 +97,10 @@ export class AudioEngine {
 
     // The element's first play() MUST fire synchronously in the gesture — awaiting anything
     // (e.g. ctx.resume()) first can consume the transient user-activation and make play() reject.
+    this.useBuffer = this._canUseBuffer();
+    const graph = this.useBuffer || usesGain(this.tier); // GRAPH mode builds an AudioContext + GainNode
     let playPromise;
-    if (usesGain(this.tier)) {
+    if (graph) {
       const AC = window.AudioContext || window.webkitAudioContext;
       this.ctx = new AC();
       // If the context is interrupted/suspended out from under us (no visibility event, per above),
@@ -80,16 +110,40 @@ export class AudioEngine {
         this.reconcileLiveness();
         if (this.state !== before) this._emit();
       });
-      const srcNode = this.ctx.createMediaElementSource(el);
       this.gain = this.ctx.createGain();
-      this.gain.gain.value = 0; // start silent; start() ramps up
-      srcNode.connect(this.gain).connect(this.ctx.destination);
+      this.gain.gain.value = 0; // start silent; applyDesired ramps up
+      this.gain.connect(this.ctx.destination);
+      this._elSrc = this.ctx.createMediaElementSource(el);
+      if (this.useBuffer) {
+        // Element is a MUTED keep-alive (liveness + iOS interruption signal); the audible sound is
+        // the gapless looping buffer routed through the gain bus (started just below).
+        this._elMute = this.ctx.createGain();
+        this._elMute.gain.value = 0;
+        this._elSrc.connect(this._elMute).connect(this.ctx.destination);
+      } else {
+        this._elSrc.connect(this.gain); // no buffer: the element IS the audible source, via the gain
+      }
       playPromise = el.play(); // start synchronously in the gesture, before any await
       await this.ctx.resume(); // synchronous-in-gesture unlock
+      if (this.useBuffer) {
+        // Decode + start the sample-accurate loop. Safe AFTER the gesture (a buffer source needs a
+        // RUNNING context, not user-activation). On any failure, fall back to element-as-audible so
+        // the room is never silent just because one decode failed.
+        try {
+          this._buf = await this._loadBuffer(url);
+          this._startBuffer();
+        } catch (e) {
+          console.warn('gapless buffer unavailable — falling back to <audio> loop', e);
+          this.useBuffer = false;
+          this._buf = null; this._bufSrc = null;
+          try { this._elSrc.disconnect(); } catch (_e) { /* was only connected to the mute sink */ }
+          this._elSrc.connect(this.gain); // element becomes the audible source through the gain bus
+        }
+      }
     } else {
-      playPromise = el.play(); // start synchronously in the gesture
+      playPromise = el.play(); // ELEMENT mode: start the unrouted loop synchronously in the gesture
     }
-    // Keep it playing forever as the keep-alive substrate; on non-gain tiers "stop" pauses it.
+    // Keep it playing forever as the keep-alive substrate; on ELEMENT-mode non-gain tiers "stop" pauses it.
     await playPromise;
     this.armed = true;
     this._setupMediaSession();
@@ -103,31 +157,35 @@ export class AudioEngine {
     clearTimeout(this._fadeTimer); // a new actuation cancels any in-progress timer fade-out
     if (!this.armed) return;
     if (desired.soundscape && desired.soundscape !== this.currentSoundscape) {
-      // Only start audio during the swap if it should be sounding (gain-tier keep-alive, or START);
+      // Only start audio during the swap if it should be sounding (GRAPH-mode keep-alive, or START);
       // a swap on a STOPPED unrouted device must not resurrect noise.
-      await this._swapSoundscape(desired.soundscape, desired.url, usesGain(this.tier) || desired.verb === VERBS.START);
+      await this._swapSoundscape(desired.soundscape, desired.url, !!this.gain || desired.verb === VERBS.START);
     }
     const g = clampGain(desired.gainLinear);
-    if (usesGain(this.tier)) {
-      // Element keeps playing regardless; gain expresses start/stop/volume.
+    const on = desired.verb === VERBS.START;
+    if (this.gain) {
+      // GRAPH mode: the element keeps playing (as the audible source, or as a muted keep-alive when
+      // the looping buffer is audible); the GAIN expresses start/stop/volume. The volume TARGET is
+      // tier-aware — remote (MODERN) or foreground (MID desktop/Android) volume where the device
+      // honors it, else a fixed unity gain (LEGACY-class / fixed-volume devices).
       if (this.el.paused) { try { await this.el.play(); } catch (e) { this._fail(e.message); return; } }
-      const on = desired.verb === VERBS.START;
-      this._rampGain(on ? g : 0);
-      this.currentGain = on ? g : 0;
+      if (on && this.useBuffer && !this._bufSrc) this._startBuffer(); // (re)start a dropped gapless loop
+      const softVolume = usesGain(this.tier) || this.fgVolume;
+      this._rampGain(on ? (softVolume ? g : 1) : 0);
+      this.currentGain = softVolume ? (on ? g : 0) : (on ? 1 : 0);
       if (on) {
-        // Don't report PLAYING unless the context is actually running (a suspended ctx = silence).
+        // Don't report PLAYING unless audio is actually flowing (a suspended ctx = silence).
         if (this.ctx && this.ctx.state !== 'running') {
           try { await this.ctx.resume(); } catch (e) { console.warn('ctx.resume failed', e); }
         }
-        const running = !this.el.paused && (!this.ctx || this.ctx.state === 'running');
-        this.state = running ? STATES.PLAYING : STATES.REQUIRES_GESTURE;
+        this.state = this._isRunning() ? STATES.PLAYING : STATES.REQUIRES_GESTURE;
       } else {
         this.state = STATES.STOPPED;
       }
     } else {
-      // Unrouted element (LEGACY/MID). MID gets best-effort foreground volume via element.volume
-      // (honored off-iOS; old iOS ignores it). Stays unrouted, so lock/background playback survives.
-      const on = desired.verb === VERBS.START;
+      // ELEMENT mode: unrouted <audio> (LEGACY/MID on old iOS). MID gets best-effort foreground
+      // volume via element.volume (honored off-iOS; old iOS ignores it). Stays unrouted, so
+      // lock/background playback survives — this is the compat fallback, unchanged.
       if (this.fgVolume) this.el.volume = on ? g : this.el.volume; // 0..0.6, safe range
       if (on) {
         try { await this.el.play(); this.state = STATES.PLAYING; }
@@ -161,7 +219,7 @@ export class AudioEngine {
   fadeOutAndStop(seconds = 8) {
     if (!this.armed) return;
     const stop = () => this.applyDesired({ verb: VERBS.STOP, gainLinear: 0, soundscape: this.currentSoundscape });
-    if (usesGain(this.tier) && this.gain && this.ctx && this.ctx.state === 'running') {
+    if (this.gain && this.ctx && this.ctx.state === 'running') {
       const now = this.ctx.currentTime, p = this.gain.gain;
       p.cancelScheduledValues(now);
       p.setValueAtTime(Math.max(0.0001, p.value), now);
@@ -181,7 +239,21 @@ export class AudioEngine {
   }
 
   async _swapSoundscape(soundscapeId, url, shouldPlay = true) {
-    // src swaps are UNSAFE while backgrounded on iOS 15+ (kills lock playback). Defer if hidden.
+    if (this.useBuffer) {
+      // Gapless swap: decode the new loop and replace the looping source on the gain bus. The
+      // (muted) keep-alive element's src is deliberately NOT reloaded — reloading a media element's
+      // src while backgrounded is exactly what kills iOS lock playback; a buffer swap has no such
+      // issue (decoding + starting a source in a running context needs neither a gesture nor
+      // visibility). Audibility is gated by the gain, so this stays silent while STOPPED.
+      this.currentSoundscape = soundscapeId;
+      this._pendingSoundscape = null;
+      try {
+        this._buf = await this._loadBuffer(url);
+        this._startBuffer();
+      } catch (e) { this._fail(e.message); }
+      return;
+    }
+    // ELEMENT mode: src swaps are UNSAFE while backgrounded on iOS 15+ (kills lock playback). Defer if hidden.
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
       this._pendingSoundscape = { soundscapeId, url, shouldPlay };
       return;
@@ -203,11 +275,17 @@ export class AudioEngine {
     if (this.ctx && this.ctx.state !== 'running') {
       try { await this.ctx.resume(); } catch (e) { console.warn('ctx.resume failed', e); }
     }
-    if (this.el.paused && this.state === STATES.PLAYING) {
+    // Keep the element playing: the audible source in ELEMENT mode, and a keep-alive / iOS
+    // interruption signal in GRAPH+buffer mode (where its pause doesn't itself silence the room).
+    if (this.el.paused && (this.state === STATES.PLAYING || this.useBuffer)) {
       try { await this.el.play(); } catch (e) { console.warn('recover play blocked', e); }
     }
+    // An interruption can tear down the gapless loop; re-arm it once the context is running again.
+    if (this.useBuffer && this.state === STATES.PLAYING && this.ctx && this.ctx.state === 'running' && !this._bufSrc) {
+      this._startBuffer();
+    }
     await this._acquireWakeLock();
-    const running = !this.el.paused && (!this.ctx || this.ctx.state === 'running');
+    const running = this._isRunning();
     if (running && (this.state === STATES.ERROR || this.state === STATES.REQUIRES_GESTURE)) {
       // Audio is actually flowing again — clear a transient error OR a REQUIRES_GESTURE that a
       // background window set while ctx.resume() was still pending. Without the REQUIRES_GESTURE
@@ -221,16 +299,67 @@ export class AudioEngine {
     return running;
   }
 
-  // Re-verify that a PLAYING claim is real: if the element is paused or the context isn't running,
-  // audio is NOT flowing, so downgrade to REQUIRES_GESTURE (which alarms the parent). Called before
-  // every report and from the pause/statechange listeners. Pure w.r.t. anything but state — does
-  // NOT emit (callers decide) so it can't recurse through report(). (finding #2)
+  // Is audible audio actually flowing right now? In GRAPH+buffer mode the audible source is the
+  // looping buffer, so a paused (muted) keep-alive element does NOT mean silence — liveness tracks
+  // the context + a live buffer source. Otherwise the element itself is the audible source.
+  _isRunning() {
+    if (!this.armed || !this.el) return false;
+    if (this.useBuffer) return !!this.ctx && this.ctx.state === 'running' && !!this._bufSrc;
+    return !this.el.paused && (!this.ctx || this.ctx.state === 'running');
+  }
+
+  // Re-verify that a PLAYING claim is real: if audio is NOT flowing (element paused / context not
+  // running / buffer torn down), downgrade to REQUIRES_GESTURE (which alarms the parent). Called
+  // before every report and from the pause/statechange listeners. Pure w.r.t. anything but state —
+  // does NOT emit (callers decide) so it can't recurse through report(). (finding #2)
   reconcileLiveness() {
-    if (this.armed && this.state === STATES.PLAYING) {
-      const running = !!this.el && !this.el.paused && (!this.ctx || this.ctx.state === 'running');
-      if (!running) { this.state = STATES.REQUIRES_GESTURE; this._updateMediaSessionState(); }
+    if (this.armed && this.state === STATES.PLAYING && !this._isRunning()) {
+      this.state = STATES.REQUIRES_GESTURE; this._updateMediaSessionState();
     }
     return this.state;
+  }
+
+  // Decide the loop engine. TRUE ⇒ play the loop as a gapless AudioBufferSourceNode; FALSE ⇒ keep
+  // the unrouted <audio loop> (the old-iOS fallback that survives a locked screen). We go gapless
+  // only where a Web Audio context can KEEP RUNNING in the background: MODERN pins audioSession=
+  // 'playback' (16.4+); any non-iOS platform is proven by element.volume being honored (old iOS
+  // ignores it, so it never qualifies — exactly the devices that must keep the lock-surviving
+  // element). Feature-detected, never version-sniffed, and a wrong guess fails safe (→ element).
+  _canUseBuffer() {
+    const win = typeof window !== 'undefined' ? window : {};
+    if (!(win.AudioContext || win.webkitAudioContext)) return false;
+    return usesGain(this.tier) || !!this.caps.audioSession || !!this.caps.elementVolume;
+  }
+
+  // Fetch + decode a soundscape URL into an AudioBuffer. Handles BOTH decodeAudioData shapes (modern
+  // promise + old callback) so it works across the WebKit range that reaches GRAPH mode.
+  async _loadBuffer(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('fetch ' + res.status);
+    const bytes = await res.arrayBuffer();
+    return await new Promise((resolve, reject) => {
+      let settled = false;
+      const ok = (b) => { if (!settled) { settled = true; resolve(b); } };
+      const no = (e) => { if (!settled) { settled = true; reject(e || new Error('decodeAudioData failed')); } };
+      try {
+        const p = this.ctx.decodeAudioData(bytes, ok, no); // callback form: universal
+        if (p && typeof p.then === 'function') p.then(ok, no); // promise form: modern
+      } catch (e) { no(e); }
+    });
+  }
+
+  // (Re)start the sample-accurate looping source feeding the gain bus. A stopped BufferSourceNode is
+  // single-use, so recovery creates a fresh node from the same decoded buffer.
+  _startBuffer() {
+    if (!this.ctx || !this._buf || !this.gain) return;
+    try { if (this._bufSrc) { this._bufSrc.onended = null; this._bufSrc.stop(); } } catch (_e) { /* already stopped */ }
+    const src = this.ctx.createBufferSource();
+    src.buffer = this._buf;
+    src.loop = true; // the wrap is sample-accurate in the audio thread → gapless, even while locked
+    src.connect(this.gain);
+    src.onended = () => { if (this._bufSrc === src) this._bufSrc = null; };
+    try { src.start(); } catch (e) { console.warn('buffer start failed', e); }
+    this._bufSrc = src;
   }
 
   _fail(reason) {
