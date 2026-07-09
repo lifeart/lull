@@ -341,7 +341,7 @@ if (self.top === self.window) {
     const b = document.createElement('div');
     b.setAttribute('role', 'note');
     b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;padding:8px 12px;font:600 12px/1.4 -apple-system,system-ui,sans-serif;text-align:center;background:#1c1c1e;color:#fff;';
-    b.innerHTML = '🔧 DEMO — the hub is simulated in your browser (no server). Open the <a style="color:#0a84ff" href="../">demo home</a> to see Player + Controller together.';
+    b.innerHTML = '<svg width="15" height="15" style="vertical-align:-0.16em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14.7 3.3a5 5 0 0 0-4.3 7.9L3.8 17.8a1.7 1.7 0 0 0 2.4 2.4l6.6-6.6a5 5 0 0 0 6.3-6.3l-2.7 2.7-2.6-.6-.6-2.6z"/></svg> DEMO — the hub is simulated in your browser (no server). Open the <a style="color:#0a84ff" href="../">demo home</a> to see Player + Controller together.';
     document.body.appendChild(b);
   });
 }

@@ -11,6 +11,7 @@ import {
 import { detectCaps, tierFromCaps, lockSummary } from '/shared/tiers.js';
 import { AudioEngine } from './audio.js';
 import { Monitor } from './monitor.js';
+import { icon, hydrateIcons, esc } from '/icons.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -253,15 +254,15 @@ function render() {
   $('devName').textContent = friendlyName;
   $('tierBadge').textContent = tier;
   $('eq').hidden = !playing;
-  $('stateLine').textContent =
-    playing ? '▶ Playing' :
-    st === STATES.STOPPED ? '■ Silent (armed & connected)' :
-    st === STATES.REQUIRES_GESTURE ? '⚠ Needs a tap to resume' :
-    st === STATES.ERROR ? '⚠ Audio error' : st;
+  $('stateLine').innerHTML =
+    playing ? icon('play') + ' Playing' :
+    st === STATES.STOPPED ? icon('stop-square') + ' Silent (armed &amp; connected)' :
+    st === STATES.REQUIRES_GESTURE ? icon('warning') + ' Needs a tap to resume' :
+    st === STATES.ERROR ? icon('warning') + ' Audio error' : esc(String(st));
   $('soundLine').textContent = playing ? `Sound: ${labelFor(engine.getSoundscape() || desired.soundscape)}` : '';
   const rem = remainingSec(desired, hubNow());
   $('timerLine').textContent = rem != null ? `Sleep timer: ${Math.floor(rem / 60)}:${String(rem % 60).padStart(2, '0')}` : '';
-  $('capsLine').textContent = '🔒 ' + lockSummary(tier);
+  $('capsLine').innerHTML = icon('lock') + ' ' + esc(lockSummary(tier));
   renderMonitor();
   if (st === STATES.REQUIRES_GESTURE) showOverlay('Tap anywhere to resume the sound');
 }
@@ -323,7 +324,7 @@ function renderMonitor() {
     return;
   }
   btn.hidden = false;
-  btn.textContent = monitor.active ? '🎙 Baby monitor: on — tap to stop' : '🎙 Start baby monitor';
+  btn.innerHTML = icon('mic') + (monitor.active ? ' Baby monitor: on — tap to stop' : ' Start baby monitor');
   btn.classList.toggle('btn-primary', monitor.active);
   btn.classList.toggle('btn-ghost', !monitor.active);
   if (note) {
@@ -339,12 +340,12 @@ function renderMonitor() {
 
 // --- pre-arm hardening checklist (advisory; persisted per device) (P9) ---
 const HARDEN = [
-  ['power', '🔌 Plugged into power'],
-  ['autolock', '🔒 Auto-Lock = Never (or Guided Access on)'],
-  ['updates', '🔄 Automatic Updates off'],
-  ['ring', '🔔 Ring switch on, volume up'],
-  ['lowpower', '🪫 Low Power Mode off'],
-  ['tabs', '🗂 Safari → Close Tabs = Manually'],
+  ['power', 'power', 'Plugged into power'],
+  ['autolock', 'lock', 'Auto-Lock = Never (or Guided Access on)'],
+  ['updates', 'refresh', 'Automatic Updates off'],
+  ['ring', 'bell', 'Ring switch on, volume up'],
+  ['lowpower', 'battery', 'Low Power Mode off'],
+  ['tabs', 'tabs', 'Safari → Close Tabs = Manually'],
 ];
 function updateHardenCount() {
   const done = HARDEN.filter(([k]) => localStorage.getItem('mp.harden.' + k) === '1').length;
@@ -353,12 +354,12 @@ function updateHardenCount() {
 function buildHardening() {
   const wrap = $('hardenList'); if (!wrap) return;
   wrap.innerHTML = '';
-  for (const [key, label] of HARDEN) {
+  for (const [key, ic, label] of HARDEN) {
     const row = document.createElement('label'); row.className = 'checkrow';
     const cb = document.createElement('input'); cb.type = 'checkbox'; cb.className = 'harden'; cb.dataset.key = key;
     cb.checked = localStorage.getItem('mp.harden.' + key) === '1';
     cb.addEventListener('change', () => { localStorage.setItem('mp.harden.' + key, cb.checked ? '1' : '0'); updateHardenCount(); });
-    const span = document.createElement('span'); span.textContent = label;
+    const span = document.createElement('span'); span.innerHTML = icon(ic) + ' ' + esc(label);
     row.append(cb, span); wrap.append(row);
   }
   updateHardenCount();
@@ -373,6 +374,7 @@ function buildHardening() {
   $('monitorToggle').addEventListener('click', toggleMonitor);
   $('overlay').addEventListener('click', resumeFromGesture);
   $('overlay').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') resumeFromGesture(); });
+  hydrateIcons(); // swap [data-icon] placeholders (arm button, safety note) for inline SVG
   wireRecovery();
   $('name').value = friendlyName;
   buildHardening();

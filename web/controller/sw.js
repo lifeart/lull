@@ -1,9 +1,9 @@
 // Controller service worker — shell cache only (network-first), no media handling.
-const SHELL = 'mp-controller-shell-v4'; // bump → drops the stale-cached shell (old JS) on activate
+const SHELL = 'mp-controller-shell-v5'; // bump → drops the stale-cached shell (old JS) on activate
 const SHELL_PREFIX = 'mp-controller-shell-'; // only touch THIS app's caches on cleanup
 const SHELL_FILES = [
   './', './index.html', './controller.js', './alarm.js', './manifest.webmanifest',
-  '/app.css', '/shared/protocol.js', '/shared/tiers.js',
+  '/app.css', '/icons.js', '/shared/protocol.js', '/shared/tiers.js',
 ];
 
 self.addEventListener('install', (e) => {

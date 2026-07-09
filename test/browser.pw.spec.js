@@ -55,7 +55,7 @@ test('happy path: arm, start, stop, pre-flight (MID)', async ({ browser }) => {
   await expect(card.locator('.statechip')).toContainText('playing', { timeout: 10000 });
   await expect(player.locator('#stateLine')).toContainText('Playing', { timeout: 10000 });
 
-  await card.getByRole('button', { name: '■ Stop' }).click();
+  await card.getByRole('button', { name: 'Stop' }).click();
   await expect(card.locator('.statechip')).toContainText('silent', { timeout: 10000 });
   await expect(player.locator('#stateLine')).toContainText(/Silent/i, { timeout: 10000 });
 
@@ -314,13 +314,13 @@ test('favorite a sound: the star pins it to the top of the library and the card 
   await pinkStar().click(); // favorite Pink noise
   await expect(list.locator('.uprow .upname').nth(0)).toHaveText('Pink noise', { timeout: 10000 });
   await expect(card.locator('.sound .chips .chip').nth(0)).toHaveText('Pink noise', { timeout: 10000 });
-  // active state fully reflected: filled glyph + .on class + aria-pressed
-  await expect(pinkStar()).toHaveText('★');
+  // active state fully reflected: filled-star icon (solid path) + .on class + aria-pressed
+  await expect(pinkStar().locator('path[fill="currentColor"]')).toHaveCount(1, { timeout: 10000 });
   await expect(pinkStar()).toHaveClass(/\bon\b/);
   await expect(pinkStar()).toHaveAttribute('aria-pressed', 'true');
 
   await pinkStar().click(); // un-favorite → the pin + active state are released
-  await expect(pinkStar()).toHaveText('☆', { timeout: 10000 });
+  await expect(pinkStar().locator('path[fill="currentColor"]')).toHaveCount(0, { timeout: 10000 }); // outline star
   await expect(pinkStar()).not.toHaveClass(/\bon\b/);
   await expect(pinkStar()).toHaveAttribute('aria-pressed', 'false');
   await ctx.close();
@@ -538,7 +538,7 @@ test('default-ON sleep timer: a plain Start applies ~45 min; an explicit "off" i
   await expect(rem).toHaveText(/4[45]:\d\d/, { timeout: 10000 });
 
   // Explicitly turn the timer OFF → remembered as off, and a later plain Start has NO countdown.
-  await card.getByRole('button', { name: '■ Stop' }).click();
+  await card.getByRole('button', { name: 'Stop' }).click();
   await expect(rem).toHaveText('—', { timeout: 10000 });
   await card.getByRole('button', { name: 'off' }).click();
   await expect(card.getByRole('button', { name: 'off' })).toHaveAttribute('aria-pressed', 'true');
@@ -564,7 +564,7 @@ test('remembered per-room sleep timer: Start re-applies the last-chosen timer (P
   await expect(card.getByRole('button', { name: '15m' })).toHaveAttribute('aria-pressed', 'true');
 
   // Stop wipes the timer…
-  await card.getByRole('button', { name: '■ Stop' }).click();
+  await card.getByRole('button', { name: 'Stop' }).click();
   await expect(rem).toHaveText('—', { timeout: 10000 });
 
   // …but a plain Start re-applies the remembered 15m — the P1 win.

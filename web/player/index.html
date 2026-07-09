@@ -23,7 +23,7 @@
       <div class="card">
         <label class="label" for="name">Room / device name</label>
         <input class="input" id="name" placeholder="Nursery" autocomplete="off" enterkeyhint="done" />
-        <button id="armBtn" class="btn btn-primary big block" style="margin-top:22px">🔊 Arm this device</button>
+        <button id="armBtn" class="btn btn-primary big block" style="margin-top:22px" data-icon="speaker" data-ico-cls="ico-lg">Arm this device</button>
         <p class="muted" id="armError" role="alert" aria-live="assertive" style="color:var(--danger);min-height:1.2em"></p>
         <details class="tokendetails">
           <summary class="faint">Access token — only if the hub requires one</summary>
@@ -35,7 +35,7 @@
         <p class="faint" style="margin:4px 0 10px">Tick each once you've done it — these keep the sound alive overnight. (Advisory; you can arm anyway.)</p>
         <div id="hardenList"></div>
       </div>
-      <p class="note-safety" id="safetyNote">🔊 <strong>Place it across the room</strong> — at least 2 m away, never in or on the crib. Keep the volume low: louder isn’t safer, and no app can measure the real loudness at the crib. Playback winds down after 45&nbsp;min by default — gentler than all night.</p>
+      <p class="note-safety" id="safetyNote"><span data-icon="speaker"></span> <strong>Place it across the room</strong> — at least 2 m away, never in or on the crib. Keep the volume low: louder isn’t safer, and no app can measure the real loudness at the crib. Playback winds down after 45&nbsp;min by default — gentler than all night.</p>
       <p class="faint">If iOS ever stops the sound, this screen goes dark with “tap to resume”.</p>
     </section>
 

@@ -2,11 +2,11 @@
 // but NEVER intercepts audio/Range requests — a mishandled Range breaks background playback.
 // (docs/DESIGN.md §4)
 
-const SHELL = 'mp-player-shell-v4'; // bump → drops the stale-cached shell (old JS) on activate
+const SHELL = 'mp-player-shell-v5'; // bump → drops the stale-cached shell (old JS) on activate
 const SHELL_PREFIX = 'mp-player-shell-'; // only touch THIS app's caches on cleanup
 const SHELL_FILES = [
   './', './index.html', './player.js', './audio.js', './manifest.webmanifest',
-  '/app.css', '/shared/protocol.js', '/shared/tiers.js',
+  '/app.css', '/icons.js', '/shared/protocol.js', '/shared/tiers.js',
 ];
 
 self.addEventListener('install', (e) => {

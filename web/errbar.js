@@ -17,7 +17,9 @@
       'font:12px/1.45 ui-monospace,Menlo,monospace;padding:10px 12px;border-top:2px solid #ff6b6b;' +
       'box-shadow:0 -4px 16px rgba(0,0,0,.45)';
     var title = document.createElement('div');
-    title.textContent = '⚠ Error — tap to dismiss';
+    // ES5 + no app.css here (errbar must run even if the module graph fails), so the warning icon is
+    // inlined with an explicit size and currentColor (inherits the bar's #ffd9d9 text).
+    title.innerHTML = '<svg width="14" height="14" style="vertical-align:-2px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4.3 21 19.3H3z"/><path d="M12 10v4.4"/><path d="M12 17.4h.01"/></svg> Error — tap to dismiss';
     title.style.cssText = 'font-weight:600;margin-bottom:6px;font-family:-apple-system,sans-serif';
     box.appendChild(title);
     list = document.createElement('div');

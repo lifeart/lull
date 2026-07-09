@@ -25,7 +25,7 @@
     <div class="appbar">
       <h1>Rooms</h1>
       <span class="appbar-right">
-        <button id="tokenBtn" class="iconbtn" aria-label="Access token" title="Access token">🔑</button>
+        <button id="tokenBtn" class="iconbtn" aria-label="Access token" title="Access token" data-icon="lock"></button>
         <span id="hubStatus" class="hub">…</span>
       </span>
     </div>
@@ -43,7 +43,7 @@
     <!-- 1 · Tonight (the nightly job): one-tap scene + status check. Hidden while there are no
          rooms (guarded :has() in app.css) so first-run leads with "Add a room" instead. -->
     <div class="card bedtime">
-      <button id="bedtimeBtn" class="btn btn-play block big">🌙 Start bedtime — all rooms</button>
+      <button id="bedtimeBtn" class="btn btn-play block big" data-icon="moon" data-ico-cls="ico-lg">Start bedtime — all rooms</button>
       <button id="preflightBtn" class="btn btn-ghost block" style="margin-top:10px">Check all rooms</button>
       <p id="preflightResult" class="muted" aria-live="polite" style="margin:12px 0 0; text-align:center; min-height:1.2em"></p>
     </div>

@@ -11,6 +11,7 @@ import {
 import { tierControls, lockSummary, detectCaps, tierFromCaps } from '/shared/tiers.js';
 import { AudioEngine } from '../player/audio.js'; // reuse the player's iOS audio engine locally
 import { primeAlarm, startAlarm, stopAlarm } from './alarm.js';
+import { icon, hydrateIcons, esc } from '/icons.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -152,7 +153,7 @@ function reconcileAlarms(next) {
     if (alarmKind === 'failure' && alarmDeviceId === d.deviceId && d.online && (st === STATES.PLAYING || st === STATES.STOPPED)) {
       const name = d.friendlyName || d.deviceId;
       stopAlarm();
-      $('alarmText').textContent = `✓ ${name} recovered`;
+      $('alarmText').innerHTML = icon('check') + ' ' + esc(name) + ' recovered';
       alarmDeviceId = null; alarmKind = null;
     }
     // Baby monitor (M8a): sustained loud room → "possible crying"; clears when it goes quiet again.
@@ -164,7 +165,7 @@ function reconcileAlarms(next) {
       if (m.count >= CRY_SUSTAIN && !alreadyCrying) raiseAlarm(d.deviceId, 'possible crying — loud in the room', 'cry');
       if (alreadyCrying && lvl < CRY_OFF) {
         const name = d.friendlyName || d.deviceId;
-        stopAlarm(); $('alarmText').textContent = `✓ ${name} quiet again`; alarmDeviceId = null; alarmKind = null; m.count = 0;
+        stopAlarm(); $('alarmText').innerHTML = icon('check') + ' ' + esc(name) + ' quiet again'; alarmDeviceId = null; alarmKind = null; m.count = 0;
       }
       micHigh.set(d.deviceId, m);
     }
@@ -208,7 +209,7 @@ function raiseAlarm(deviceId, why, kind = 'failure') {
   const name = d ? d.friendlyName : deviceId;
   alarmDeviceId = deviceId; alarmKind = kind;
   $('alarmBanner').hidden = false;
-  $('alarmText').textContent = `${kind === 'cry' ? '👶' : '⚠'} ${name}: ${why}`;
+  $('alarmText').innerHTML = (kind === 'cry' ? icon('baby') : icon('warning')) + ' ' + esc(name) + ': ' + esc(why);
   startAlarm();
 }
 function clearAlarm() { stopAlarm(); alarmDeviceId = null; alarmKind = null; $('alarmBanner').hidden = true; }
@@ -248,8 +249,8 @@ function renderHealth() {
   if (health) { el.textContent = 'Checking rooms…'; el.className = 'healthline faint'; return; }
   if (!healthResult) { el.textContent = ''; el.className = 'healthline'; return; }
   const ago = Math.max(0, Math.round((Date.now() - healthResult.at) / 1000));
-  if (healthResult.fail === 0) { el.textContent = `✓ ${healthResult.ok} room${healthResult.ok === 1 ? '' : 's'} verified ${agoText(ago)}`; el.className = 'healthline ok'; }
-  else { el.textContent = `✗ ${healthResult.fail} room${healthResult.fail === 1 ? '' : 's'} not responding — check before bed`; el.className = 'healthline bad'; }
+  if (healthResult.fail === 0) { el.innerHTML = icon('check') + ` ${healthResult.ok} room${healthResult.ok === 1 ? '' : 's'} verified ${esc(agoText(ago))}`; el.className = 'healthline ok'; }
+  else { el.innerHTML = icon('xmark') + ` ${healthResult.fail} room${healthResult.fail === 1 ? '' : 's'} not responding — check before bed`; el.className = 'healthline bad'; }
 }
 
 // --- bedtime pre-flight ---
@@ -257,7 +258,7 @@ function runPreflight() {
   primeAlarm();
   // Cancel any in-flight probes from a prior (double-tapped) run so stale results can't leak in.
   for (const [cmdId, p] of pending) { if (p.kind === 'probe') { clearTimeout(p.timer); pending.delete(cmdId); } }
-  if (!devices.length) { setPreflight('No devices registered yet.', 'var(--danger-text)'); return; }
+  if (!devices.length) { setPreflight(null, 'No devices registered yet.', 'var(--danger-text)'); return; }
   preflight = { need: new Set(devices.map((d) => d.deviceId)), ok: new Set(), fail: new Set() };
   for (const d of devices) {
     const probe = makeProbe({ target: d.deviceId });
@@ -265,7 +266,7 @@ function runPreflight() {
     pending.set(probe.cmdId, { deviceId: d.deviceId, timer, kind: 'probe' });
     send(probe);
   }
-  setPreflight('Checking all rooms…', 'var(--accent)');
+  setPreflight(null, 'Checking all rooms…', 'var(--accent)');
 }
 // --- one-tap Bedtime scene (P2) -------------------------------------------------------------------
 // Start every online room that isn't already playing, each with its remembered sleep timer (P1), in
@@ -274,9 +275,9 @@ function runPreflight() {
 // well under the socket rate-limit burst, so no stagger is needed.
 function runBedtime() {
   primeAlarm();
-  if (!devices.length) { setPreflight('No rooms yet — arm a Speaker first.', 'var(--danger-text)'); return; }
+  if (!devices.length) { setPreflight(null, 'No rooms yet — arm a Speaker first.', 'var(--danger-text)'); return; }
   const online = devices.filter((d) => d.online);
-  if (!online.length) { setPreflight('No rooms online — check the speakers before bed.', 'var(--danger-text)'); return; }
+  if (!online.length) { setPreflight(null, 'No rooms online — check the speakers before bed.', 'var(--danger-text)'); return; }
   let started = 0, already = 0;
   for (const d of online) {
     if ((d.reported || {}).state === STATES.PLAYING) { already++; continue; }
@@ -287,18 +288,18 @@ function runBedtime() {
   const parts = [`Started ${started}`];
   if (already) parts.push(`${already} already playing`);
   if (offline) parts.push(`${offline} offline`);
-  setPreflight('🌙 ' + parts.join(' · '), offline ? 'var(--warn)' : 'var(--play-text)');
+  setPreflight('moon', parts.join(' · '), offline ? 'var(--warn)' : 'var(--play-text)');
 }
 
 function updatePreflight() {
   if (!preflight) return;
   const done = preflight.ok.size + preflight.fail.size;
-  if (done < preflight.need.size) { setPreflight(`Checking… ${done}/${preflight.need.size}`, 'var(--accent)'); return; }
-  if (preflight.fail.size === 0) setPreflight(`✓ All ${preflight.ok.size} rooms responding`, 'var(--play-text)');
-  else setPreflight(`✗ ${preflight.fail.size} room(s) not responding — fix before bed`, 'var(--danger-text)');
+  if (done < preflight.need.size) { setPreflight(null, `Checking… ${done}/${preflight.need.size}`, 'var(--accent)'); return; }
+  if (preflight.fail.size === 0) setPreflight('check', `All ${preflight.ok.size} rooms responding`, 'var(--play-text)');
+  else setPreflight('xmark', `${preflight.fail.size} room(s) not responding — fix before bed`, 'var(--danger-text)');
   preflight = null;
 }
-function setPreflight(text, color) { const el = $('preflightResult'); el.textContent = text; el.style.color = color; }
+function setPreflight(iconName, text, color) { const el = $('preflightResult'); el.innerHTML = (iconName ? icon(iconName) + ' ' : '') + esc(text); el.style.color = color; }
 
 // --- persistent cards ---
 function fmt(sec) { return sec == null ? '' : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }
@@ -332,8 +333,8 @@ function makeCard(deviceId, tier, caps) {
       <button class="link-btn danger forget" hidden>Forget</button>
     </div>
     <div class="btnrow" style="margin-top:14px">
-      <button class="btn btn-play go">▶ Start</button>
-      <button class="btn btn-danger">■ Stop</button>
+      <button class="btn btn-play go">${icon('play')} Start</button>
+      <button class="btn btn-danger">${icon('stop-square')} Stop</button>
     </div>
     <div class="sec">
       <div class="row"><span class="sec-label" style="margin-bottom:0">Sleep timer</span><span class="rem countdown spacer" style="text-align:right"></span></div>
@@ -341,7 +342,7 @@ function makeCard(deviceId, tier, caps) {
     </div>
     <div class="sound"></div>
     <div class="vol"></div>
-    <div class="mic sec" hidden><div class="sec-label" style="margin-bottom:6px">👶 Room sound</div><div class="meter"><span class="meter-fill"></span></div></div>
+    <div class="mic sec" hidden><div class="sec-label" style="margin-bottom:6px">${icon('baby')} Room sound</div><div class="meter"><span class="meter-fill"></span></div></div>
     <div class="lockline faint" style="margin-top:14px"></div>`;
 
   const refs = {
@@ -367,17 +368,17 @@ function makeCard(deviceId, tier, caps) {
   });
 
   const timers = el.querySelector('.timers');
-  const addTimer = (key, label, fields) => {
+  const addTimer = (key, label, fields, iconName) => {
     const b = chipBtn(label, () => {
       setRememberedTimerKey(deviceId, key); // remember the choice (P1) — incl. 'off', so unset ≠ off
       sendCommand(deviceId, Object.assign({ verb: VERBS.SET_TIMER }, fields()));
       paintTimerChips();
-    });
+    }, iconName);
     refs.timerChips.set(key, b);
     timers.append(b);
   };
   for (const min of [15, 30, 45, 60]) addTimer(`${min}m`, `${min}m`, () => ({ durationMs: min * 60000 }));
-  addTimer('wake', '☾ 7:00', () => ({ durationMs: Math.max(0, nextWakeEpochMs(7) - Date.now()) }));
+  addTimer('wake', '7:00', () => ({ durationMs: Math.max(0, nextWakeEpochMs(7) - Date.now()) }), 'moon');
   addTimer('off', 'off', () => ({ endsAtEpochMs: null }));
   function paintTimerChips() {
     const k = rememberedTimerKey(deviceId) || DEFAULT_TIMER_KEY; // reflect the default-ON 45m when unset
@@ -449,7 +450,7 @@ function makeCard(deviceId, tier, caps) {
       refs.meterFill.classList.toggle('hot', lvl >= CRY_ON);
     } else { refs.mic.hidden = true; }
     refs.forget.hidden = d.online; // only offer "Forget" for a currently-offline (ghost) device
-    refs.lock.textContent = '🔒 ' + lockSummary(d.tier || 'LEGACY');
+    refs.lock.innerHTML = icon('lock') + ' ' + esc(lockSummary(d.tier || 'LEGACY'));
     refs.rem.textContent = d.remainingSec != null ? fmt(d.remainingSec) : '—';
     refs.start.disabled = rep.state === STATES.PLAYING;
     const active = rep.soundscape || (d.desired && d.desired.soundscape);
@@ -468,8 +469,10 @@ function makeCard(deviceId, tier, caps) {
   return { el, update };
 }
 
-function chipBtn(text, on) { const b = document.createElement('button'); b.className = 'chip'; b.textContent = text; b.addEventListener('click', on); return b; }
-function linkBtn(text, on) { const b = document.createElement('button'); b.className = 'link-btn'; b.textContent = text; b.addEventListener('click', on); return b; }
+// `text` is set as textContent by default (safe for user-provided sound labels); pass an `iconName`
+// to prepend an SVG icon (then text is escaped into innerHTML).
+function chipBtn(text, on, iconName) { const b = document.createElement('button'); b.className = 'chip'; if (iconName) b.innerHTML = icon(iconName) + ' ' + esc(text); else b.textContent = text; b.addEventListener('click', on); return b; }
+function linkBtn(text, on, iconName) { const b = document.createElement('button'); b.className = 'link-btn'; if (iconName) b.innerHTML = icon(iconName); else b.textContent = text; b.addEventListener('click', on); return b; }
 function faint(t) { const d = document.createElement('div'); d.className = 'faint'; d.textContent = t; return d; }
 function secLabel(t) { const d = document.createElement('div'); d.className = 'sec-label'; d.textContent = t; return d; }
 
@@ -488,7 +491,9 @@ function stateClass(s, online) {
 
 function setHub(state) {
   const el = $('hubStatus');
-  el.textContent = state === 'online' ? '● hub connected' : state === 'connecting' ? '○ connecting…' : '● hub unreachable';
+  el.innerHTML = state === 'online' ? icon('dot', { cls: 'ico-dot' }) + ' hub connected'
+    : state === 'connecting' ? icon('dot-open', { cls: 'ico-dot' }) + ' connecting…'
+    : icon('dot', { cls: 'ico-dot' }) + ' hub unreachable';
   el.className = 'hub ' + state;
 }
 
@@ -532,11 +537,11 @@ function renderUploadList() {
 
 function libraryRow(s) {
   const row = document.createElement('div'); row.className = 'uprow'; row.dataset.id = s.id;
-  const handle = document.createElement('span'); handle.className = 'handle'; handle.textContent = '⠿'; handle.setAttribute('aria-label', 'Drag to reorder');
+  const handle = document.createElement('span'); handle.className = 'handle'; handle.innerHTML = icon('grip'); handle.setAttribute('aria-label', 'Drag to reorder');
   // Favorite toggle — hub-synced; favorites are pinned to the top of the library server-side.
   const star = document.createElement('button');
   star.className = 'fav' + (s.fav ? ' on' : '');
-  star.textContent = s.fav ? '★' : '☆';
+  star.innerHTML = s.fav ? icon('star-fill') : icon('star');
   star.setAttribute('aria-pressed', String(!!s.fav));
   star.setAttribute('aria-label', s.fav ? `Unfavorite ${s.label}` : `Favorite ${s.label}`);
   star.addEventListener('click', () => toggleFav(s));
@@ -545,8 +550,8 @@ function libraryRow(s) {
   row.append(handle, star, name, sp);
   // Keyboard/VoiceOver-accessible reorder alternative to the pointer drag (which touch-only users
   // and screen readers can't operate). (finding #20)
-  const up = linkBtn('▲', () => moveRow(s.id, -1)); up.setAttribute('aria-label', `Move ${s.label} up`);
-  const down = linkBtn('▼', () => moveRow(s.id, +1)); down.setAttribute('aria-label', `Move ${s.label} down`);
+  const up = linkBtn('', () => moveRow(s.id, -1), 'chevron-up'); up.setAttribute('aria-label', `Move ${s.label} up`);
+  const down = linkBtn('', () => moveRow(s.id, +1), 'chevron-down'); down.setAttribute('aria-label', `Move ${s.label} down`);
   row.append(up, down);
   if (s.kind === 'upload') row.append(linkBtn('Rename', () => beginRename(row, s)), deleteControl(s));
   else { const t = document.createElement('span'); t.className = 'faint'; t.textContent = 'built-in'; row.append(t); }
@@ -755,7 +760,7 @@ function renderLocalPlayer() {
   const host = $('localPlayer'); if (!host) return;
   host.innerHTML = `
     <div class="row">
-      <strong>🔊 This device</strong>
+      <strong>${icon('speaker')} This device</strong>
       <span class="badge local-tier"></span>
       <span class="spacer"></span>
       <span class="eq local-eq" hidden aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span>
@@ -767,7 +772,7 @@ function renderLocalPlayer() {
     <div class="sec local-soundsec" hidden><div class="sec-label">Sound</div><div class="chips local-sounds"></div></div>
     <div class="local-vol sec" hidden></div>
     <div class="sec"><div class="row"><span class="sec-label" style="margin-bottom:0">Sleep timer</span><span class="local-rem mono spacer" style="text-align:right"></span></div><div class="chips local-timers" style="margin-top:8px"></div></div>
-    <p class="note-safety">🔊 <strong>Keep the volume low</strong> and the device across the room from the crib. Louder isn’t safer, and no app can measure the real loudness. Playback winds down after 45&nbsp;min by default — change or turn it off below.</p>
+    <p class="note-safety">${icon('speaker')} <strong>Keep the volume low</strong> and the device across the room from the crib. Louder isn’t safer, and no app can measure the real loudness. Playback winds down after 45&nbsp;min by default — change or turn it off below.</p>
     <p class="faint" style="margin-top:12px">Plays on this phone/tablet — no separate speaker needed. Keep this tab open.</p>`;
   const r = localState.refs = {
     tier: host.querySelector('.local-tier'), eq: host.querySelector('.local-eq'), state: host.querySelector('.local-state'),
@@ -805,9 +810,9 @@ function renderLocalPlayer() {
   // Timer chips (keyed; default-ON 45m like the rooms — enforced by the 1s interval below).
   r.timerChips = new Map();
   r.timers = host.querySelector('.local-timers');
-  const addT = (key, label) => { if (!r.timers) return; const b = chipBtn(label, () => localSetTimerKey(key)); r.timerChips.set(key, b); r.timers.append(b); };
+  const addT = (key, label, iconName) => { if (!r.timers) return; const b = chipBtn(label, () => localSetTimerKey(key), iconName); r.timerChips.set(key, b); r.timers.append(b); };
   for (const min of [15, 30, 45, 60]) addT(`${min}m`, `${min}m`);
-  addT('wake', '☾ 7:00');
+  addT('wake', '7:00', 'moon');
   addT('off', 'off');
 
   renderLocal();
@@ -823,7 +828,7 @@ function renderLocal() {
   r.eq.hidden = !playing;
   r.state.textContent = !localState.armed ? '' : localState.fading ? 'winding down…' : playing ? 'playing' : st === STATES.REQUIRES_GESTURE ? 'tap to resume' : st === STATES.ERROR ? 'error' : 'stopped';
   r.state.className = 'statechip local-state' + (playing ? ' playing' : (st === STATES.ERROR || st === STATES.REQUIRES_GESTURE) ? ' bad' : '');
-  r.play.textContent = playing ? '⏸ Pause' : '▶ Play here';
+  r.play.innerHTML = playing ? icon('pause') + ' Pause' : icon('play') + ' Play here';
   const sound = localState.desired.soundscape;
   for (const [id, b] of r.soundChips) b.setAttribute('aria-pressed', String(id === sound));
   if (r.timerChips) for (const [key, b] of r.timerChips) b.setAttribute('aria-pressed', String(key === localState.timerKey));
@@ -865,13 +870,14 @@ function setupAddRoom() {
   nameEl.addEventListener('input', rebuild);
   copyEl.addEventListener('click', async () => {
     rebuild();
-    try { await navigator.clipboard.writeText(linkEl.href); copyEl.textContent = 'Copied ✓'; setTimeout(() => { copyEl.textContent = 'Copy link'; }, 1500); }
+    try { await navigator.clipboard.writeText(linkEl.href); copyEl.innerHTML = 'Copied ' + icon('check'); setTimeout(() => { copyEl.textContent = 'Copy link'; }, 1500); }
     catch (_e) { copyEl.textContent = 'Select the link above to copy'; } // clipboard needs a secure context
   });
   rebuild();
 }
 
 // --- boot ---
+hydrateIcons(); // swap [data-icon] placeholders (token button, bedtime button) for inline SVG
 setupAddRoom();
 $('bedtimeBtn').addEventListener('click', runBedtime);
 $('preflightBtn').addEventListener('click', runPreflight);
