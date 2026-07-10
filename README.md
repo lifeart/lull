@@ -11,7 +11,7 @@ Web tech only — no App Store, no native build, nothing to install. Open it, ta
 [![CI](https://github.com/lifeart/lull/actions/workflows/ci.yml/badge.svg)](https://github.com/lifeart/lull/actions/workflows/ci.yml)
 ![runtime deps: 1](https://img.shields.io/badge/runtime%20deps-1%20(ws)-brightgreen)
 ![PWA](https://img.shields.io/badge/PWA-installable-5aa2ff)
-![tests](https://img.shields.io/badge/tests-149%20green-brightgreen)
+![tests](https://img.shields.io/badge/tests-152%20green-brightgreen)
 ![web tech only](https://img.shields.io/badge/native%20app-none-lightgrey)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -40,11 +40,12 @@ It runs on one codebase from **iOS 10.3 to today** (feature‑detected, no build
 - 👶 **Baby monitor** — an opt‑in mic “cry meter” sends the room's sound level back to your phone, with an alert on a sustained spike.
 - 🛎 **Fails loud, on the *awake* phone** — every command must ACK within ~3 s; a bedtime pre‑flight won't show green until every room answers; a dead speaker sets off a loud alarm on *your* phone, so 3 a.m. failures are caught before bed.
 - 📱 **Installable PWA** — add each app to the home screen; runs standalone (no browser chrome).
+- ✈️ **Works offline** — a service worker caches the app shell *and* the sound files in Cache Storage, so on a modern browser, once you've opened it, playback keeps working with no network (travel, planes). Old-iOS lock playback is untouched — the SW only serves media from cache when actually offline.
 - ➕ **Your own sounds** — drag‑drop or upload a lullaby/recording; it becomes a selectable sound on every device.
 - 🧩 **One tiny hub** — a single Node process, one runtime dependency (`ws`); runs on a Raspberry Pi / NAS / spare laptop, or reach it from anywhere via a **Cloudflare Tunnel**.
 - 🔐 **Locked down** — Origin allowlist + an `MP_TOKEN` shared secret gate every command and upload; the hub **fails closed** on a public bind.
 - 👨‍👩‍👧 **One hub, many families** — flip on multi‑family mode (`MP_MULTIGROUP=1`) and each household uses its own token; every token is a fully **isolated group** — its own rooms, controls, and uploaded sounds — with no accounts and no server‑side registry.
-- 🧪 **149 tests** (119 Node + 30 real‑browser Playwright), green in CI on every push.
+- 🧪 **152 tests** (120 Node + 32 real‑browser Playwright), green in CI on every push.
 
 ## The one thing to understand first
 
@@ -69,9 +70,9 @@ npm start                         # hub on http://localhost:8080   (localhost is
 Open **`http://localhost:8080/player/`** in one tab → name it, tap **Arm**. Open **`/controller/`** in another → drive it: start/stop, volume, timer, switch sounds.
 
 ```bash
-npm test                          # 119 Node tests (protocol, seams, audio engine, hub, auth, store, multi-group…)
+npm test                          # 120 Node tests (protocol, seams, audio engine, hub, auth, store, multi-group…)
 npx playwright install chromium   # once
-npm run test:e2e                  # 30 real-browser tests
+npm run test:e2e                  # 32 real-browser tests
 npm run fetch:real                # (optional) swap in real CC0/PD recordings for rain/ocean/fire/wind
 npm run serve:demo                # build + serve the static demo locally
 ```

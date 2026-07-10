@@ -106,7 +106,10 @@
   }
 }
 
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* touch-action: manipulation kills the double-tap-to-zoom gesture (and the 300ms tap delay) app-wide
+   while KEEPING pinch-zoom for accessibility. Elements that need a different value (drag handles →
+   touch-action:none) override this via their higher-specificity rule. */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 [hidden] { display: none !important; }
 
 /* Apple-style inline SVG icons (web/icons.js). Sized in em so a mark scales with its text; the
@@ -206,6 +209,10 @@ h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; margin: 0;
  * chevron is the toggle button and rotates when open. Header row is a large convenience tap target. */
 .card.collapsed > :not(.cardhead) { display: none; }
 .cardhead { cursor: pointer; -webkit-user-select: none; user-select: none; }
+/* Keep a card's title on ONE line. When playback starts, the eq bars + "playing" chip widen the
+ * right side; a wrapping title ("This device" → two lines) makes the whole card jump taller. Long
+ * room names ellipsize instead of wrapping. (min-width:0 lets the flex item shrink for the ellipsis.) */
+.cardhead > strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .chev { -webkit-appearance: none; appearance: none; background: transparent; border: 0; padding: 4px;
   margin: -4px -2px -4px 4px; color: var(--faint); cursor: pointer; display: inline-flex; align-items: center;
   min-width: 32px; min-height: 32px; justify-content: center; transition: transform 0.2s var(--ease-out); }

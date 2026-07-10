@@ -155,7 +155,15 @@ export class AudioEngine {
       playPromise = el.play(); // ELEMENT mode: start the unrouted loop synchronously in the gesture
     }
     // Keep it playing forever as the keep-alive substrate; on ELEMENT-mode non-gain tiers "stop" pauses it.
-    await playPromise;
+    // When the audible source is the gapless BUFFER, a keep-alive element that can't start (e.g. offline,
+    // where its src is served from Cache Storage) must NOT fail arm — the room is audible via the buffer.
+    // Mirrors the element 'error' tolerance in buffer mode. In ELEMENT mode the element IS the audio, so
+    // its failure is a real arm failure.
+    if (this.useBuffer && this._bufSrc) {
+      try { await playPromise; } catch (e) { console.warn('keep-alive element did not start (buffer is audible):', e && e.message); }
+    } else {
+      await playPromise;
+    }
     this.armed = true;
     this._setupMediaSession();
     await this._acquireWakeLock();

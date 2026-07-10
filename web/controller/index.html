@@ -62,7 +62,9 @@
       </div>
       <div id="addRoomPanel" hidden>
         <p class="faint" style="margin:8px 0">Type the room name here, then open this link on the old iPhone/iPad in Safari (AirDrop or message it) — it arrives named and ready, no typing on the device.</p>
-        <input class="input" id="addRoomName" placeholder="Nursery" autocomplete="off" />
+        <input class="input" id="addRoomName" value="Bedroom" placeholder="Bedroom" autocomplete="off" />
+        <label class="faint" for="addRoomToken" style="display:block; margin-top:10px">Access token — the device joins this hub / family (prefilled from yours; leave blank if the hub has none)</label>
+        <input class="input" id="addRoomToken" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="token (optional)" style="margin-top:4px" />
         <a id="addRoomLink" class="addroom-link" target="_blank" rel="noopener"></a>
         <button id="addRoomCopy" class="btn btn-primary block" style="margin-top:10px">Copy link</button>
       </div>
