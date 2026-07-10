@@ -58,7 +58,9 @@ const hubNow = () => Date.now() + clockOffset;
 // --- sound library (baked loops + uploads) maps id -> url ---
 async function loadLibrary() {
   try {
-    const res = await fetch('/api/library', { cache: 'no-cache' });
+    // Carry the token so a multi-group hub returns THIS family's library, not the default group's.
+    const t = authToken();
+    const res = await fetch('/api/library' + (t ? `?token=${encodeURIComponent(t)}` : ''), { cache: 'no-cache' });
     if (res.ok) {
       const m = await res.json();
       const map = {}, labels = {};
@@ -180,10 +182,17 @@ function report() {
 async function armFromGesture() {
   friendlyName = ($('name').value || friendlyName || 'Speaker').trim();
   localStorage.setItem('mp.name', friendlyName);
+  // Immediate feedback: arming fetches + decodes the loop, which isn't instant — show a spinner on
+  // the button from the tap so it never looks like the tap did nothing. (loader UX)
+  const armBtn = $('armBtn');
+  const armBtnHtml = armBtn ? armBtn.innerHTML : '';
+  if (armBtn) { armBtn.disabled = true; armBtn.innerHTML = '<span class="spinner"></span> Starting sound…'; }
+  $('armError').textContent = '';
   engine = new AudioEngine({
     tier,
     caps,
     onState: () => { render(); report(); },
+    onLoading: () => render(), // reflect a mid-session soundscape swap as "Loading sound…"
   });
   engine.onIntent = async (verb) => { // lock-screen play/pause -> make authoritative via the hub
     send(makeCommand({ target: deviceId, verb })); // hub reduces + echoes a snapshot
@@ -208,6 +217,9 @@ async function armFromGesture() {
     console.error('arm failed', e);
     $('armError').textContent = 'Could not start audio: ' + e.message + ' — tap again.';
     if (window.__lullError) window.__lullError('Arm failed: ' + (e && e.stack ? e.stack : e)); // visible on old iOS
+  } finally {
+    // Restore the button (on success #setup is hidden, so this is invisible; on failure it's tappable again).
+    if (armBtn) { armBtn.disabled = false; armBtn.innerHTML = armBtnHtml; }
   }
 }
 
@@ -250,11 +262,13 @@ function render() {
   if (reArm) { showOverlay(`Tap to arm “${friendlyName}”`); return; }
   if (!armed) return;
   const st = engine.getState();
-  const playing = st === STATES.PLAYING;
+  const loading = engine.isLoading && engine.isLoading(); // a soundscape is fetching/decoding right now
+  const playing = st === STATES.PLAYING && !loading;
   $('devName').textContent = friendlyName;
   $('tierBadge').textContent = tier;
   $('eq').hidden = !playing;
   $('stateLine').innerHTML =
+    loading ? '<span class="spinner"></span> Loading sound…' :
     playing ? icon('play') + ' Playing' :
     st === STATES.STOPPED ? icon('stop-square') + ' Silent (armed &amp; connected)' :
     st === STATES.REQUIRES_GESTURE ? icon('warning') + ' Needs a tap to resume' :

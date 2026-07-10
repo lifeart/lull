@@ -310,6 +310,14 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 .eq span:nth-child(6) { animation-delay: 0.12s; }
 .eq span:nth-child(7) { animation-delay: 0s; }
 
+/* Loading spinner — shown while a sound is fetching/decoding/starting, so a not-instant "play"
+   never looks frozen. Inherits currentColor (theme-safe in both light/dark); sized in em so it
+   scales with whatever text it sits beside. iOS 10.3-safe (border + transform rotate). */
+.spinner { display: inline-block; width: 1em; height: 1em; border: 2px solid rgba(127,127,127,0.3); border-top-color: currentColor; border-radius: 50%; animation: spin 0.7s linear infinite; box-sizing: border-box; vertical-align: -0.15em; }
+.spinner.sm { width: 0.85em; height: 0.85em; border-width: 2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.8s; } }
+
 /* Sound library rows (reorderable) + drop zone.
  * iOS table-cell rhythm on a 390px phone: the NAME gets the flexible space (no more "White …"
  * truncation), the secondary controls shrink visually but keep a ≥44pt EFFECTIVE touch target

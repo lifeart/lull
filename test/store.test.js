@@ -13,7 +13,7 @@ test('corrupt state file -> starts empty, does not throw', () => {
   const f = tmp();
   writeFileSync(f, '{ this is not json');
   const s = new Store(f); // _loadSync catch
-  assert.equal(s.list().length, 0);
+  assert.equal(s.listAll().length, 0);
   rmSync(f, { force: true });
 });
 

@@ -325,3 +325,27 @@ test('recover() clears a stuck REQUIRES_GESTURE once audio is actually flowing a
   assert.equal(ok, true);
   assert.equal(eng.getState(), STATES.PLAYING, 'no false "needs a tap" alarm while playing correctly');
 });
+
+// --- loading signal (drives the "starting…" / "Loading sound…" spinners in the UI) ---
+test('loading signal: onLoading fires only on the 0↔1 edge and isLoading() tracks it', () => {
+  const events = [];
+  const eng = new AudioEngine({ tier: TIERS.LEGACY, onState: () => {}, onLoading: (b) => events.push(b) });
+  assert.equal(eng.isLoading(), false);
+  eng._setLoading(true);  // 0->1 : fire true
+  eng._setLoading(true);  // 1->2 : already loading, no fire
+  assert.equal(eng.isLoading(), true);
+  eng._setLoading(false); // 2->1 : still loading, no fire
+  assert.equal(eng.isLoading(), true);
+  eng._setLoading(false); // 1->0 : fire false
+  assert.equal(eng.isLoading(), false);
+  assert.deepEqual(events, [true, false], 'nested loads collapse to one true + one false (no early flicker)');
+});
+
+test('loading signal: an element-mode soundscape swap flags then clears loading around playback', async () => {
+  const events = [];
+  const eng = new AudioEngine({ tier: TIERS.LEGACY, onState: () => {}, onLoading: (b) => events.push(b) });
+  eng.el = fakeEl(); eng.armed = true; eng.currentSoundscape = 'white';
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'pink', url: '/pink.wav' });
+  assert.deepEqual(events, [true, false], 'the swap shows a spinner, then clears it');
+  assert.equal(eng.isLoading(), false);
+});

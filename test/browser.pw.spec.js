@@ -723,3 +723,25 @@ test('Bedtime scene: one tap starts every online room (P2)', async ({ browser })
   await expect(c.locator('#preflightResult')).toContainText(/Started/i, { timeout: 10000 });
   await ctxA.close(); await ctxB.close(); await ctxC.close();
 });
+
+test('loader: "Play here" shows a spinner until the sound is ready (not-instant start ≠ broken)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const c = await ctx.newPage();
+  // Make the audio asset observably slow so the fetch+decode window is real, not a race.
+  await c.route('**/*.wav', async (route) => { await new Promise((r) => setTimeout(r, 1200)); await route.continue(); });
+  await c.goto('/controller/');
+  const local = c.locator('#localPlayer');
+  await expect(local.locator('.local-play')).toHaveText(/Play here/i, { timeout: 10000 });
+
+  await local.locator('.local-play').click();
+  // Immediately: a visible spinner + "starting…" so the tap never looks ignored (the whole point).
+  await expect(local.locator('.local-state .spinner')).toBeVisible({ timeout: 2000 });
+  await expect(local.locator('.local-state')).toContainText(/starting/i);
+  await expect(local.locator('.local-play')).toContainText(/Starting/i);
+
+  // Then it resolves to playing and the spinner is gone.
+  await expect(local.locator('.local-state')).toHaveText('playing', { timeout: 10000 });
+  await expect(local.locator('.local-state .spinner')).toHaveCount(0);
+  await expect(local.locator('.local-play')).toHaveText(/Pause/i);
+  await ctx.close();
+});

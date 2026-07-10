@@ -4,6 +4,7 @@
 import { promises as fs } from 'node:fs';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { DEFAULT_GROUP } from '../shared/protocol.js';
 
 // ext -> mime (also the allowlist of what we accept)
 export const AUDIO_TYPES = {
@@ -14,8 +15,11 @@ export const MAX_UPLOAD_BYTES = 30 * 1024 * 1024; // 30 MB per file
 const MAX_ITEMS = 50;
 
 export class Uploads {
-  constructor(dir) {
+  // urlBase is the public path files under `dir` are served at (default '/uploads'). Per-group
+  // libraries pass '/uploads/<groupId>' so a device only ever loads its own family's audio.
+  constructor(dir, urlBase = '/uploads') {
     this.dir = dir;
+    this.urlBase = urlBase;
     this.index = [];
     this.order = []; // display order of ALL soundscape ids (baked + uploads); missing ids sort last
     this.favs = []; // favorited soundscape ids (ALL kinds: baked + ambient + uploads) — hub-synced
@@ -84,11 +88,11 @@ export class Uploads {
     const item = { id, label: (label || 'Track').slice(0, 60), file, ext };
     this.index.push(item);
     await this._persist();
-    return { id: item.id, label: item.label, url: `/uploads/${file}`, kind: 'upload' };
+    return { id: item.id, label: item.label, url: `${this.urlBase}/${file}`, kind: 'upload' };
   }
 
   // Soundscape-shaped entries the library endpoint merges with the baked loops.
-  list() { return this.index.map((i) => ({ id: i.id, label: i.label, url: `/uploads/${i.file}`, kind: 'upload' })); }
+  list() { return this.index.map((i) => ({ id: i.id, label: i.label, url: `${this.urlBase}/${i.file}`, kind: 'upload' })); }
 
   async add({ label, ext, bytes, nowMs }) {
     ext = String(ext).toLowerCase();
@@ -101,7 +105,7 @@ export class Uploads {
     const item = { id, label: (label || 'Track').slice(0, 60), file, ext };
     this.index.push(item);
     await this._persist();
-    return { id: item.id, label: item.label, url: `/uploads/${file}`, kind: 'upload' };
+    return { id: item.id, label: item.label, url: `${this.urlBase}/${file}`, kind: 'upload' };
   }
 
   async rename(id, label) {
@@ -109,7 +113,7 @@ export class Uploads {
     if (!item) return null;
     item.label = String(label || item.label).slice(0, 60);
     await this._persist();
-    return { id: item.id, label: item.label, url: `/uploads/${item.file}`, kind: 'upload' };
+    return { id: item.id, label: item.label, url: `${this.urlBase}/${item.file}`, kind: 'upload' };
   }
 
   // Only entries in the index (uploads) can be removed — baked noises aren't here, so they're safe.
@@ -124,4 +128,34 @@ export class Uploads {
     await this._persist();
     return true;
   }
+}
+
+// Per-group upload libraries. Each family (group) gets its own `Uploads` instance so one family
+// can never see, reorder, favorite, or delete another's tracks. The DEFAULT_GROUP keeps the flat
+// legacy layout (dir = rootDir, urls at /uploads/…) so existing single-tenant deployments need no
+// migration; every other group is nested under rootDir/<groupId>/ and served at /uploads/<groupId>/.
+export class UploadsManager {
+  constructor(rootDir, { defaultGroup = DEFAULT_GROUP } = {}) {
+    this.rootDir = rootDir;
+    this.defaultGroup = defaultGroup;
+    this.instances = new Map(); // groupId -> Uploads
+  }
+
+  for(groupId) {
+    // groupId only ever comes from resolveGroup() (hex hash or DEFAULT_GROUP), but this is also a
+    // filesystem path segment — sanitize defensively so it can never traverse or escape rootDir.
+    const g = String(groupId || this.defaultGroup).replace(/[^\w-]/g, '').slice(0, 40) || this.defaultGroup;
+    let u = this.instances.get(g);
+    if (!u) {
+      const isDefault = g === this.defaultGroup;
+      const dir = isDefault ? this.rootDir : path.join(this.rootDir, g);
+      const urlBase = isDefault ? '/uploads' : `/uploads/${g}`;
+      u = new Uploads(dir, urlBase);
+      this.instances.set(g, u);
+    }
+    return u;
+  }
+
+  // Await every group's in-flight index write (graceful shutdown flushes before exit).
+  flush() { return Promise.all([...this.instances.values()].map((u) => u.flush())); }
 }

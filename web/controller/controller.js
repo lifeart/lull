@@ -25,6 +25,21 @@ let soundscapes = [{ id: 'pink', label: 'Pink noise' }]; // bootstrap = the defa
 const cards = new Map(); // deviceId -> { el, update }
 const lastState = new Map(); // deviceId -> { online, state } for spontaneous-failure alarms
 const dragging = new Set(); // deviceIds whose volume slider is being dragged
+
+// A room's audio doesn't start the instant you tap Start (the far device fetches + decodes the
+// loop), so show a "starting…" spinner on that card until it reports PLAYING — otherwise the tap
+// looks ignored. Cleared on PLAYING (update), on a NACK/timeout (the alarm then fires), or by an
+// 8s fallback so a spinner can never stick forever. (loader UX)
+const pendingStart = new Map(); // deviceId -> fallback timeout id
+function markStarting(deviceId) {
+  const old = pendingStart.get(deviceId); if (old) clearTimeout(old);
+  pendingStart.set(deviceId, setTimeout(() => clearStarting(deviceId), 8000));
+  render();
+}
+function clearStarting(deviceId) {
+  const t = pendingStart.get(deviceId); if (t) clearTimeout(t);
+  if (pendingStart.delete(deviceId)) render();
+}
 const micHigh = new Map(); // deviceId -> sustained-loud counter (baby-monitor cry detection, M8a)
 // Cry thresholds (0..1 room loudness). ON high + sustained → alarm; hysteresis to OFF clears it.
 const CRY_ON = 0.6, CRY_OFF = 0.35, CRY_SUSTAIN = 3;
@@ -193,6 +208,7 @@ function sendCommand(deviceId, fields, kind = 'command') {
   const cmd = makeCommand(Object.assign({ target: deviceId }, fields));
   const timer = setTimeout(() => onAckTimeout(cmd.cmdId), ACK_TIMEOUT_MS);
   pending.set(cmd.cmdId, { deviceId, timer, kind });
+  if (fields && fields.verb === VERBS.START) markStarting(deviceId); // show "starting…" until it plays
   send(cmd);
 }
 function onAck(msg) {
@@ -205,7 +221,9 @@ function onAck(msg) {
     updatePreflight();
   }
   if (p.kind === 'health') { (msg.ok ? health.ok : health.fail).add(p.deviceId); updateHealth(); return; } // silent (P3)
-  if (!msg.ok) raiseAlarm(p.deviceId, msg.error || 'device did not accept the command');
+  // A start that failed to reach audible playback: drop the "starting…" spinner (the alarm below
+  // takes over). A successful start keeps the spinner until the room actually reports PLAYING.
+  if (!msg.ok) { clearStarting(p.deviceId); raiseAlarm(p.deviceId, msg.error || 'device did not accept the command'); }
 }
 function onAckTimeout(cmdId) {
   const p = pending.get(cmdId);
@@ -213,6 +231,7 @@ function onAckTimeout(cmdId) {
   pending.delete(cmdId);
   if (p.kind === 'probe' && preflight && preflight.need.has(p.deviceId)) { preflight.fail.add(p.deviceId); updatePreflight(); }
   if (p.kind === 'health') { if (health) { health.fail.add(p.deviceId); updateHealth(); } return; } // silent (P3)
+  clearStarting(p.deviceId); // no response → stop the spinner; the alarm takes over
   raiseAlarm(p.deviceId, 'no response within 3s — device may be asleep or offline');
 }
 
@@ -482,9 +501,18 @@ function makeCard(deviceId, tier, caps) {
     el.className = 'card' + (d.online ? '' : ' offline') + (rep.state === STATES.REQUIRES_GESTURE || rep.state === STATES.ERROR ? ' attention' : '');
     refs.dname.textContent = d.friendlyName || d.deviceId;
     refs.badge.textContent = d.tier || '?';
-    refs.chip.textContent = stateLabel(rep.state, d.online);
-    refs.chip.className = 'statechip';
-    for (const cls of stateClass(rep.state, d.online).split(' ').filter(Boolean)) refs.chip.classList.add(cls);
+    // Once the room actually reports PLAYING (or drops offline), the start succeeded/ended — retire
+    // its spinner. Done inline (not via clearStarting) so we don't re-enter render() mid-render.
+    if (rep.state === STATES.PLAYING || !d.online) { const t = pendingStart.get(d.deviceId); if (t) clearTimeout(t); pendingStart.delete(d.deviceId); }
+    const starting = pendingStart.has(d.deviceId) && d.online && rep.state !== STATES.PLAYING;
+    if (starting) {
+      refs.chip.innerHTML = '<span class="spinner sm"></span> starting…';
+      refs.chip.className = 'statechip';
+    } else {
+      refs.chip.textContent = stateLabel(rep.state, d.online);
+      refs.chip.className = 'statechip';
+      for (const cls of stateClass(rep.state, d.online).split(' ').filter(Boolean)) refs.chip.classList.add(cls);
+    }
     refs.eq.hidden = !(d.online && rep.state === STATES.PLAYING);
     // Baby-monitor loudness meter — shown only while the device is reporting a level (monitor on).
     const lvl = rep.micLevel;
@@ -496,7 +524,7 @@ function makeCard(deviceId, tier, caps) {
     refs.forget.hidden = d.online; // only offer "Forget" for a currently-offline (ghost) device
     refs.lock.innerHTML = icon('lock') + ' ' + esc(lockSummary(d.tier || 'LEGACY'));
     refs.rem.textContent = d.remainingSec != null ? fmt(d.remainingSec) : '—';
-    refs.start.disabled = rep.state === STATES.PLAYING;
+    refs.start.disabled = starting || rep.state === STATES.PLAYING;
     const active = rep.soundscape || (d.desired && d.desired.soundscape);
     for (const [id, b] of refs.soundChips) b.setAttribute('aria-pressed', String(active === id));
     paintTimerChips(); // reflect the remembered sleep-timer choice (P1)
@@ -556,7 +584,9 @@ setInterval(() => { if (document.visibilityState === 'visible') runHealthCheck()
 
 async function loadSoundscapes() {
   try {
-    const res = await fetch('/api/library', { cache: 'no-cache' });
+    // Carry the token so a multi-group hub returns THIS family's library, not the default group's.
+    const t = authToken();
+    const res = await fetch('/api/library' + (t ? `?token=${encodeURIComponent(t)}` : ''), { cache: 'no-cache' });
     if (res.ok) {
       const m = await res.json();
       if (Array.isArray(m.soundscapes) && m.soundscapes.length) {
@@ -773,7 +803,7 @@ async function localArm() {
   if (localState.engine) return true;
   const caps = detectCaps(); const tier = tierFromCaps(caps); caps.tier = tier;
   localState.tier = tier; localState.controls = tierControls(tier, caps);
-  localState.engine = new AudioEngine({ tier, caps, onState: renderLocal });
+  localState.engine = new AudioEngine({ tier, caps, onState: renderLocal, onLoading: renderLocal });
   localState.engine.onIntent = (verb) => { if (verb === VERBS.START) localPlay(); else localStop(); }; // lock-screen controls
   try {
     await localState.engine.arm({ soundscapeId: localState.desired.soundscape, url: localUrlFor(localState.desired.soundscape), gainLinear: localState.desired.gainLinear });
@@ -782,10 +812,16 @@ async function localArm() {
 }
 async function localPlay() {
   primeAlarm(); localState.fading = false;
-  if (!(await localArm())) { renderLocal(); return; }
-  const f = timerFieldsForKey(localState.timerKey); // default-ON 45m unless the user chose otherwise / off
-  localState.desired = Object.assign({}, localState.desired, { verb: VERBS.START, endsAtEpochMs: f ? Date.now() + f.durationMs : null });
-  await localRealize(); renderLocal();
+  // Spinner from the tap: arming fetches + decodes the loop, so "Play here" isn't instant. (loader UX)
+  localState.starting = true; renderLocal();
+  try {
+    if (!(await localArm())) return;
+    const f = timerFieldsForKey(localState.timerKey); // default-ON 45m unless the user chose otherwise / off
+    localState.desired = Object.assign({}, localState.desired, { verb: VERBS.START, endsAtEpochMs: f ? Date.now() + f.durationMs : null });
+    await localRealize();
+  } finally {
+    localState.starting = false; renderLocal();
+  }
 }
 async function localSetTimerKey(key) { localState.timerKey = key; const f = timerFieldsForKey(key); await localSetTimer(f ? f.durationMs : null); renderLocal(); }
 async function localStop() { localState.fading = false; localState.desired = Object.assign({}, localState.desired, { verb: VERBS.STOP, endsAtEpochMs: null }); await localRealize(); renderLocal(); }
@@ -872,14 +908,18 @@ function renderLocalPlayer() {
 function renderLocal() {
   const r = localState.refs; if (!r || !r.play) return;
   const st = localState.engine ? localState.engine.getState() : STATES.STOPPED;
-  const playing = st === STATES.PLAYING;
+  const loading = localState.starting || (localState.engine && localState.engine.isLoading && localState.engine.isLoading());
+  const playing = st === STATES.PLAYING && !loading;
   r.tier.textContent = localState.tier || '';
   r.tier.hidden = !localState.tier;
   if (st === STATES.STOPPED) localState.fading = false; // the timer fade finished
   r.eq.hidden = !playing;
-  r.state.textContent = !localState.armed ? '' : localState.fading ? 'winding down…' : playing ? 'playing' : st === STATES.REQUIRES_GESTURE ? 'tap to resume' : st === STATES.ERROR ? 'error' : 'stopped';
+  r.state.innerHTML = loading ? '<span class="spinner sm"></span> starting…'
+    : !localState.armed ? '' : localState.fading ? 'winding down…' : playing ? 'playing'
+    : st === STATES.REQUIRES_GESTURE ? 'tap to resume' : st === STATES.ERROR ? 'error' : 'stopped';
   r.state.className = 'statechip local-state' + (playing ? ' playing' : (st === STATES.ERROR || st === STATES.REQUIRES_GESTURE) ? ' bad' : '');
-  r.play.innerHTML = playing ? icon('pause') + ' Pause' : icon('play') + ' Play here';
+  r.play.disabled = loading;
+  r.play.innerHTML = loading ? '<span class="spinner"></span> Starting…' : playing ? icon('pause') + ' Pause' : icon('play') + ' Play here';
   const sound = localState.desired.soundscape;
   for (const [id, b] of r.soundChips) b.setAttribute('aria-pressed', String(id === sound));
   if (r.timerChips) for (const [key, b] of r.timerChips) b.setAttribute('aria-pressed', String(key === localState.timerKey));

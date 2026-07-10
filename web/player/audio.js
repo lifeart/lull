@@ -30,13 +30,19 @@ import { STATES, TIERS, VERBS, usesGain, foregroundVolume, clampGain } from '../
 const PLAYBACK_FADE_IN_SEC = 3;
 
 export class AudioEngine {
-  constructor({ tier, caps, onState }) {
+  constructor({ tier, caps, onState, onLoading }) {
     this.tier = tier;
     this.caps = caps || {};
     // MID foreground volume via element.volume — only where the device actually HONORS it
     // (detected by a probe in detectCaps); old iOS ignores element.volume, so it's excluded.
     this.fgVolume = foregroundVolume(tier) && !!this.caps.elementVolume;
     this.onState = onState || (() => {});
+    // Loading signal for the UI: fetching + decoding a soundscape (or swapping the element src) can
+    // take a beat, and starting from silence with no feedback feels like a broken app. Counter-based
+    // so nested loads (arm → _loadBuffer) don't clear the spinner early. (loader UX)
+    this.onLoading = onLoading || (() => {});
+    this._loadDepth = 0;
+    this.loading = false;
     this.el = null;
     this.ctx = null;
     this.gain = null;      // audible bus (GRAPH mode only); its presence IS the mode flag
@@ -289,7 +295,12 @@ export class AudioEngine {
     this.currentSoundscape = soundscapeId;
     this._pendingSoundscape = null; // a foreground swap invalidates any stale deferral
     this.el.src = url;
-    if (shouldPlay) { try { await this.el.play(); } catch (e) { this._fail(e.message); } } // don't resurrect a stopped device
+    if (shouldPlay) {
+      this._setLoading(true);
+      try { await this.el.play(); } // don't resurrect a stopped device
+      catch (e) { this._fail(e.message); }
+      finally { this._setLoading(false); }
+    }
   }
 
   // Recovery: iOS suspends/interrupts audio on background & has version-specific regressions.
@@ -360,21 +371,37 @@ export class AudioEngine {
   }
 
   // Fetch + decode a soundscape URL into an AudioBuffer. Handles BOTH decodeAudioData shapes (modern
-  // promise + old callback) so it works across the WebKit range that reaches GRAPH mode.
+  // promise + old callback) so it works across the WebKit range that reaches GRAPH mode. Flags
+  // `loading` for the whole fetch+decode so the UI can show a spinner instead of looking frozen.
   async _loadBuffer(url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('fetch ' + res.status);
-    const bytes = await res.arrayBuffer();
-    return await new Promise((resolve, reject) => {
-      let settled = false;
-      const ok = (b) => { if (!settled) { settled = true; resolve(b); } };
-      const no = (e) => { if (!settled) { settled = true; reject(e || new Error('decodeAudioData failed')); } };
-      try {
-        const p = this.ctx.decodeAudioData(bytes, ok, no); // callback form: universal
-        if (p && typeof p.then === 'function') p.then(ok, no); // promise form: modern
-      } catch (e) { no(e); }
-    });
+    this._setLoading(true);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('fetch ' + res.status);
+      const bytes = await res.arrayBuffer();
+      return await new Promise((resolve, reject) => {
+        let settled = false;
+        const ok = (b) => { if (!settled) { settled = true; resolve(b); } };
+        const no = (e) => { if (!settled) { settled = true; reject(e || new Error('decodeAudioData failed')); } };
+        try {
+          const p = this.ctx.decodeAudioData(bytes, ok, no); // callback form: universal
+          if (p && typeof p.then === 'function') p.then(ok, no); // promise form: modern
+        } catch (e) { no(e); }
+      });
+    } finally {
+      this._setLoading(false);
+    }
   }
+
+  // Ref-counted loading flag → onLoading(true/false) only on the 0↔1 edge, so overlapping loads
+  // (arm's buffer load, a soundscape swap) never flip the spinner off while another is still running.
+  _setLoading(on) {
+    const before = this._loadDepth > 0;
+    this._loadDepth = Math.max(0, this._loadDepth + (on ? 1 : -1));
+    const now = this._loadDepth > 0;
+    if (now !== before) { this.loading = now; try { this.onLoading(now); } catch (e) { console.warn('onLoading cb failed', e); } }
+  }
+  isLoading() { return this.loading; }
 
   // (Re)start the sample-accurate looping source feeding the gain bus. A stopped BufferSourceNode is
   // single-use, so recovery creates a fresh node from the same decoded buffer.

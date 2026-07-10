@@ -8,6 +8,7 @@ import { promises as fs, rmSync } from 'node:fs';
 import { Hub } from '../hub/ws.js';
 import { Store } from '../hub/store.js';
 import { Uploads } from '../hub/uploads.js';
+import { DEFAULT_GROUP } from '../shared/protocol.js';
 
 const fakeStore = { list: () => [], get: () => null };
 function mkWs() {
@@ -71,11 +72,11 @@ test('forgetDevice drops a registration and reports unknown ids', () => {
   const store = new Store(tmp('mp-forget'));
   store.upsertDevice({ deviceId: 'nursery', friendlyName: 'Nursery', caps: {}, tier: 'MID' }, Date.now());
   const hub = new Hub(store);
-  assert.ok(store.get('nursery'));
-  assert.equal(hub.forgetDevice('nursery'), true);
-  assert.equal(store.get('nursery'), null);
-  assert.equal(hub.forgetDevice('nursery'), false, 'second forget is a no-op');
-  assert.equal(hub.forgetDevice('never-existed'), false);
+  assert.ok(store.get(DEFAULT_GROUP, 'nursery'));
+  assert.equal(hub.forgetDevice(DEFAULT_GROUP, 'nursery'), true);
+  assert.equal(store.get(DEFAULT_GROUP, 'nursery'), null);
+  assert.equal(hub.forgetDevice(DEFAULT_GROUP, 'nursery'), false, 'second forget is a no-op');
+  assert.equal(hub.forgetDevice(DEFAULT_GROUP, 'never-existed'), false);
   hub.stop();
 });
 
@@ -86,9 +87,9 @@ test('pruneStale evicts devices unseen past the TTL and keeps fresh ones', () =>
   store.upsertDevice({ deviceId: 'ghost', friendlyName: 'g', caps: {}, tier: 'MID' }, now - 100 * day);
   store.upsertDevice({ deviceId: 'live', friendlyName: 'l', caps: {}, tier: 'MID' }, now - 2 * day);
   const removed = store.pruneStale(45 * day, now);
-  assert.deepEqual(removed, ['ghost']);
-  assert.equal(store.get('ghost'), null);
-  assert.ok(store.get('live'));
+  assert.deepEqual(removed, [{ groupId: DEFAULT_GROUP, deviceId: 'ghost' }]);
+  assert.equal(store.get(DEFAULT_GROUP, 'ghost'), null);
+  assert.ok(store.get(DEFAULT_GROUP, 'live'));
   assert.deepEqual(store.pruneStale(0, now), [], 'TTL 0 disables eviction');
 });
 

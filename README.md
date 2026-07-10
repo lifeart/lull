@@ -11,7 +11,7 @@ Web tech only — no App Store, no native build, nothing to install. Open it, ta
 [![CI](https://github.com/lifeart/lull/actions/workflows/ci.yml/badge.svg)](https://github.com/lifeart/lull/actions/workflows/ci.yml)
 ![runtime deps: 1](https://img.shields.io/badge/runtime%20deps-1%20(ws)-brightgreen)
 ![PWA](https://img.shields.io/badge/PWA-installable-5aa2ff)
-![tests](https://img.shields.io/badge/tests-113%20green-brightgreen)
+![tests](https://img.shields.io/badge/tests-149%20green-brightgreen)
 ![web tech only](https://img.shields.io/badge/native%20app-none-lightgrey)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -43,7 +43,8 @@ It runs on one codebase from **iOS 10.3 to today** (feature‑detected, no build
 - ➕ **Your own sounds** — drag‑drop or upload a lullaby/recording; it becomes a selectable sound on every device.
 - 🧩 **One tiny hub** — a single Node process, one runtime dependency (`ws`); runs on a Raspberry Pi / NAS / spare laptop, or reach it from anywhere via a **Cloudflare Tunnel**.
 - 🔐 **Locked down** — Origin allowlist + an `MP_TOKEN` shared secret gate every command and upload; the hub **fails closed** on a public bind.
-- 🧪 **113 tests** (88 Node + 25 real‑browser Playwright), green in CI on every push.
+- 👨‍👩‍👧 **One hub, many families** — flip on multi‑family mode (`MP_MULTIGROUP=1`) and each household uses its own token; every token is a fully **isolated group** — its own rooms, controls, and uploaded sounds — with no accounts and no server‑side registry.
+- 🧪 **149 tests** (119 Node + 30 real‑browser Playwright), green in CI on every push.
 
 ## The one thing to understand first
 
@@ -68,9 +69,9 @@ npm start                         # hub on http://localhost:8080   (localhost is
 Open **`http://localhost:8080/player/`** in one tab → name it, tap **Arm**. Open **`/controller/`** in another → drive it: start/stop, volume, timer, switch sounds.
 
 ```bash
-npm test                          # 88 Node tests (protocol, seams, audio engine, hub, auth, store…)
+npm test                          # 119 Node tests (protocol, seams, audio engine, hub, auth, store, multi-group…)
 npx playwright install chromium   # once
-npm run test:e2e                  # 25 real-browser tests
+npm run test:e2e                  # 30 real-browser tests
 npm run fetch:real                # (optional) swap in real CC0/PD recordings for rain/ocean/fire/wind
 npm run serve:demo                # build + serve the static demo locally
 ```
@@ -112,6 +113,7 @@ It demonstrates the control plane, tiers, timer, and parent‑phone alarm; it ca
 - **On your LAN** — run the hub on an always‑on box; open it on your devices over HTTPS.
 - **From anywhere** — a **Cloudflare Tunnel** gives it a public HTTPS URL with no port‑forwarding.
 - **Auth** — set `MP_TOKEN` (`openssl rand -hex 24`) and open the apps once with `…/controller/#t=YOUR_TOKEN` (remembered per device); the hub won't start open on a public interface.
+- **Many families, one hub** — set `MP_MULTIGROUP=1` and give each household its own token; open their apps with `…/controller/#t=FAMILY_TOKEN`. Every distinct token becomes a fully **isolated group** — separate rooms, controls, and uploaded sounds — with no accounts and no server‑side registry (the group id is a hash of the token). Existing single‑token setups are unaffected (leave the flag off).
 
 Full topology matrix (LAN · tunnel · "GitHub Pages + WebRTC vs. a standalone hub"), public‑exposure auth, and a step‑by‑step Synology recipe are in **[`docs/DEPLOY.md`](docs/DEPLOY.md)** and [`docs/DEPLOY-SYNOLOGY.md`](docs/DEPLOY-SYNOLOGY.md).
 
