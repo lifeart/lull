@@ -201,7 +201,7 @@ export class AudioEngine {
       // ELEMENT mode: unrouted <audio> (LEGACY/MID on old iOS). MID gets best-effort foreground
       // volume via element.volume (honored off-iOS; old iOS ignores it). Stays unrouted, so
       // lock/background playback survives — this is the compat fallback, unchanged.
-      if (this.fgVolume) this.el.volume = on ? g : this.el.volume; // 0..0.6, safe range
+      if (this.fgVolume) this.el.volume = on ? g : this.el.volume; // 0..1.0 (clampGain / GAIN_SOFT_CAP)
       if (on) {
         try { await this.el.play(); this.state = STATES.PLAYING; }
         catch (e) { this.state = STATES.REQUIRES_GESTURE; console.warn('play blocked', e); }

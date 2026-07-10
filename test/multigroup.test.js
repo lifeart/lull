@@ -33,6 +33,18 @@ test('resolveGroup: TOFU maps any token→its own group; tokenless gated by allo
   assert.equal(resolveGroup('/ws', { ...mg, allowTokenless: true }).groupId, 'default', 'tokenless → shared default group when allowed');
 });
 
+test('resolveGroup: in multi-group mode the configured MP_TOKEN stays on the default group (seamless migration)', () => {
+  const mg = { multiGroup: true, token: 'house-secret', allowTokenless: false };
+  // The existing single-token deployment's token keeps its devices + uploads (DEFAULT_GROUP)…
+  assert.deepEqual(resolveGroup('/ws?token=house-secret', mg), { ok: true, groupId: 'default' });
+  // …while any OTHER family's token gets its own isolated group.
+  assert.equal(resolveGroup('/ws?token=smith-family', mg).groupId, hashGroup('smith-family'));
+  assert.notEqual(resolveGroup('/ws?token=smith-family', mg).groupId, 'default');
+  // With no MP_TOKEN configured, no token is privileged — every token is its own group (pure TOFU).
+  const pure = { multiGroup: true, token: '', allowTokenless: false };
+  assert.equal(resolveGroup('/ws?token=house-secret', pure).groupId, hashGroup('house-secret'));
+});
+
 test('resolveGroup: legacy mode gates on the single MP_TOKEN, one default group', () => {
   const lg = { multiGroup: false, token: 'secret', allowTokenless: false };
   assert.deepEqual(resolveGroup('/ws?token=secret', lg), { ok: true, groupId: 'default' });

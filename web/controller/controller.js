@@ -118,6 +118,10 @@ function send(obj) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.st
 // the existing durationMs path (the hub rebases to its own clock and owns the absolute deadline).
 const rememberedTimerKey = (deviceId) => { try { return localStorage.getItem('mp.timer.' + deviceId) || null; } catch (_e) { return null; } };
 const setRememberedTimerKey = (deviceId, key) => { try { key ? localStorage.setItem('mp.timer.' + deviceId, key) : localStorage.removeItem('mp.timer.' + deviceId); } catch (e) { console.warn('timer prefs blocked', e); } };
+// Remember the last sound chosen on the local "This device" player so a controller reload restores
+// it instead of snapping back to the default. (Rooms already persist their sound in the hub's desired.)
+const rememberedLocalSound = () => { try { return localStorage.getItem('mp.local.sound') || null; } catch (_e) { return null; } };
+const setRememberedLocalSound = (id) => { try { id ? localStorage.setItem('mp.local.sound', id) : localStorage.removeItem('mp.local.sound'); } catch (e) { console.warn('local sound pref blocked', e); } };
 function nextWakeEpochMs(hour) {
   const now = new Date();
   const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0, 0);
@@ -791,7 +795,7 @@ function rebuildAllCards() {
 // State lives here (not in the DOM), so a library-driven rebuild never tears down playback.
 const localState = {
   engine: null, armed: false, tier: null, controls: null, refs: {}, timerKey: DEFAULT_TIMER_KEY, // default-ON 45m
-  desired: { verb: VERBS.STOP, gainLinear: GAIN_DEFAULT, soundscape: SOUNDSCAPE_DEFAULT, endsAtEpochMs: null },
+  desired: { verb: VERBS.STOP, gainLinear: GAIN_DEFAULT, soundscape: rememberedLocalSound() || SOUNDSCAPE_DEFAULT, endsAtEpochMs: null },
 };
 const localUrlFor = (id) => { const s = soundscapes.find((x) => x.id === id); return (s && s.url) || '/player/assets/pink.wav'; };
 const localPlaying = () => !!localState.engine && localState.engine.getState() === STATES.PLAYING;
@@ -826,7 +830,7 @@ async function localPlay() {
 async function localSetTimerKey(key) { localState.timerKey = key; const f = timerFieldsForKey(key); await localSetTimer(f ? f.durationMs : null); renderLocal(); }
 async function localStop() { localState.fading = false; localState.desired = Object.assign({}, localState.desired, { verb: VERBS.STOP, endsAtEpochMs: null }); await localRealize(); renderLocal(); }
 async function localToggle() { if (localPlaying()) await localStop(); else await localPlay(); }
-async function localSetSound(id) { localState.desired = Object.assign({}, localState.desired, { soundscape: id }); if (localState.armed) await localRealize(); renderLocal(); }
+async function localSetSound(id) { localState.desired = Object.assign({}, localState.desired, { soundscape: id }); setRememberedLocalSound(id); if (localState.armed) await localRealize(); renderLocal(); }
 function localSetGain(g) { localState.desired = Object.assign({}, localState.desired, { gainLinear: g }); if (localState.armed) localRealize(); }
 async function localSetTimer(durationMs) {
   if (durationMs == null) { localState.desired = Object.assign({}, localState.desired, { endsAtEpochMs: null }); if (localState.armed) await localRealize(); renderLocal(); return; }

@@ -71,6 +71,11 @@ Run **one** hub for several households, each fully isolated, by setting **`MP_MU
 - **In this mode `MP_TOKEN` is not required.** A token is still required on the network — verifyClient
   rejects tokenless clients (401) unless you also set `MP_ALLOW_OPEN=1`, which lets tokenless clients
   share one common `default` group (loopback is always allowed for local dev).
+- **Migrating an existing single-token hub (seamless):** if you **keep your existing `MP_TOKEN` set**
+  when you turn on `MP_MULTIGROUP=1`, that one token keeps mapping to the shared `default` group — so
+  all your current devices and uploaded sounds carry over unchanged. Every *other* token is its own
+  isolated family group. (Turn the flag on *without* `MP_TOKEN` and every token, including your old
+  one, becomes its own fresh group — your existing devices/uploads would then look like a new setup.)
 - **Rotating / removing a family** = give them a new token (old token → a now-empty group). Per-token
   revocation is inherent: change the token and the old one no longer resolves to their data.
 - **Caveat (same as single-token):** uploaded audio files at `/uploads/<group>/…` are obscure but not
