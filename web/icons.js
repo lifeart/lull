@@ -47,9 +47,11 @@ const PATHS = {
   dot: '<circle cx="12" cy="12" r="5" fill="currentColor" stroke="none"/>',
   'dot-open': '<circle cx="12" cy="12" r="4.6"/>',
   grip: '<g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></g>',
-  // A proper cog (Feather "settings"): rounded teeth, hollow centre — reads as a gear, not a sun.
-  // Use the FULL path (all 8 teeth) — a shortened one dropped the right tooth. (settings-button-sun)
-  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V15a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  // Symmetric 8-tooth cog (hollow centre). Replaces Feather "settings", whose blobby arc-per-tooth
+  // path left a stray nub at the 3-o'clock seam that read as a rendering defect at 1.1em. This is a
+  // single closed outline of parallel-sided trapezoidal teeth (tip R9.5 / root R7.3), so every tooth
+  // is identical and it reads as a gear — not a sun, not a smudge. (settings-button-sun)
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M10.74 4.81 L10.74 2.58 L13.26 2.58 L13.26 4.81 L16.19 6.02 L17.76 4.45 L19.55 6.24 L17.98 7.81 L19.19 10.74 L21.42 10.74 L21.42 13.26 L19.19 13.26 L17.98 16.19 L19.55 17.76 L17.76 19.55 L16.19 17.98 L13.26 19.19 L13.26 21.42 L10.74 21.42 L10.74 19.19 L7.81 17.98 L6.24 19.55 L4.45 17.76 L6.02 16.19 L4.81 13.26 L2.58 13.26 L2.58 10.74 L4.81 10.74 L6.02 7.81 L4.45 6.24 L6.24 4.45 L7.81 6.02 Z"/>',
 };
 
 // Escape text destined for innerHTML (icon strings are concatenated with app text; keep it safe/valid).
