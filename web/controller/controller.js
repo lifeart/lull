@@ -324,6 +324,22 @@ function setPreflight(iconName, text, color) { const el = $('preflightResult'); 
 // --- persistent cards ---
 function fmt(sec) { return sec == null ? '' : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }
 
+// Accordion: exactly one card is expanded at a time so a shelf of 5+ rooms stays scannable. Rooms
+// start COLLAPSED (just their title row + live status); the local "This device" player ('local')
+// is expanded by default. Tapping a card's title toggles it and collapses whatever was open.
+let expandedId = 'local';
+function toggleExpand(id) { expandedId = expandedId === id ? null : id; applyExpansion(); }
+function applyExpansion() {
+  const setCard = (el, open) => {
+    if (!el) return;
+    el.classList.toggle('collapsed', !open);
+    const chev = el.querySelector('.cardhead .chev');
+    if (chev) { chev.setAttribute('aria-expanded', String(open)); chev.setAttribute('aria-label', open ? 'Collapse' : 'Expand'); }
+  };
+  for (const [id, card] of cards) setCard(card.el, expandedId === id);
+  setCard($('localPlayer'), expandedId === 'local');
+}
+
 function render() {
   const container = $('devices');
   $('empty').hidden = devices.length > 0;
@@ -335,6 +351,7 @@ function render() {
     card.update(d);
   }
   for (const [id, card] of cards) if (!seen.has(id)) { card.el.remove(); cards.delete(id); }
+  applyExpansion(); // card.update() resets el.className each tick — re-assert the collapsed state
 }
 
 function makeCard(deviceId, tier, caps) {
@@ -343,7 +360,7 @@ function makeCard(deviceId, tier, caps) {
   el.className = 'card';
   el.dataset.deviceId = deviceId;
   el.innerHTML = `
-    <div class="row">
+    <div class="row cardhead">
       <span class="dot"></span>
       <strong class="dname"></strong>
       <span class="badge"></span>
@@ -351,6 +368,7 @@ function makeCard(deviceId, tier, caps) {
       <span class="eq" hidden aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span>
       <span class="statechip"></span>
       <button class="link-btn danger forget" hidden>Forget</button>
+      <button class="chev" aria-label="Expand" aria-expanded="false">${icon('chevron-down')}</button>
     </div>
     <div class="btnrow" style="margin-top:14px">
       <button class="btn btn-play go">${icon('play')} Start</button>
@@ -375,6 +393,12 @@ function makeCard(deviceId, tier, caps) {
 
   refs.start.addEventListener('click', () => startDevice(deviceId)); // carries the remembered timer (P1)
   refs.stop.addEventListener('click', () => sendCommand(deviceId, { verb: VERBS.STOP }));
+
+  // Collapse/expand: the chevron is the accessible toggle; tapping anywhere on the title row (but not
+  // its buttons — Start/Stop live below, only Forget/chevron sit here) is a convenience target.
+  const head = el.querySelector('.cardhead');
+  head.querySelector('.chev').addEventListener('click', () => toggleExpand(deviceId));
+  head.addEventListener('click', (e) => { if (!e.target.closest('button, a, input')) toggleExpand(deviceId); });
 
   // Forget an offline (ghost) device: two-tap confirm, no blocking dialog. Clears a stale
   // registration so the bedtime pre-flight can go green and the device cap can't fill. (finding #3)
@@ -779,12 +803,13 @@ async function localSetTimer(durationMs) {
 function renderLocalPlayer() {
   const host = $('localPlayer'); if (!host) return;
   host.innerHTML = `
-    <div class="row">
+    <div class="row cardhead">
       <strong>${icon('speaker')} This device</strong>
       <span class="badge local-tier"></span>
       <span class="spacer"></span>
       <span class="eq local-eq" hidden aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span>
       <span class="statechip local-state"></span>
+      <button class="chev" aria-label="Collapse" aria-expanded="true">${icon('chevron-down')}</button>
     </div>
     <div class="btnrow" style="margin-top:14px">
       <button class="btn btn-play local-play block" style="grid-column:1 / -1"></button>
@@ -801,6 +826,11 @@ function renderLocalPlayer() {
     vol: host.querySelector('.local-vol'), soundChips: new Map(), slider: null, setFill: null,
   };
   r.play.addEventListener('click', localToggle);
+
+  // Collapse/expand toggle (same accordion as the room cards).
+  const lhead = host.querySelector('.cardhead');
+  lhead.querySelector('.chev').addEventListener('click', () => toggleExpand('local'));
+  lhead.addEventListener('click', (e) => { if (!e.target.closest('button, a, input')) toggleExpand('local'); });
 
   // Sound chooser (only if there's more than one sound).
   if (soundscapes.length > 1) {
@@ -835,6 +865,7 @@ function renderLocalPlayer() {
   addT('wake', '7:00', 'moon');
   addT('off', 'off');
 
+  applyExpansion(); // the header was just rebuilt — re-assert this card's collapsed state
   renderLocal();
 }
 
@@ -904,8 +935,19 @@ $('preflightBtn').addEventListener('click', runPreflight);
 $('alarmDismiss').addEventListener('click', clearAlarm);
 $('addSoundBtn').addEventListener('click', () => $('fileInput').click());
 $('fileInput').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) uploadFile(f); e.target.value = ''; });
-// Drag-and-drop onto the Sounds card
+// Manage/Sounds section: collapsed by default (independent of the device accordion), its title row
+// toggles it. Keeps the shelf compact when the parent just wants to control rooms, not manage sounds.
 const soundsCard = $('soundsCard');
+(function wireSoundsCollapse() {
+  const head = soundsCard.querySelector('.cardhead'); if (!head) return;
+  const toggle = () => {
+    const open = !soundsCard.classList.toggle('collapsed'); // toggle() returns true when NOW collapsed
+    const chev = head.querySelector('.chev');
+    if (chev) { chev.setAttribute('aria-expanded', String(open)); chev.setAttribute('aria-label', open ? 'Collapse' : 'Expand'); }
+  };
+  const chev = head.querySelector('.chev'); if (chev) chev.addEventListener('click', toggle);
+  head.addEventListener('click', (e) => { if (!e.target.closest('button, a, input')) toggle(); });
+})();
 ['dragenter', 'dragover'].forEach((ev) => soundsCard.addEventListener(ev, (e) => { e.preventDefault(); soundsCard.classList.add('dropping'); }));
 ['dragleave', 'dragend', 'drop'].forEach((ev) => soundsCard.addEventListener(ev, (e) => { e.preventDefault(); soundsCard.classList.remove('dropping'); }));
 soundsCard.addEventListener('drop', (e) => { const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) uploadFile(f); });

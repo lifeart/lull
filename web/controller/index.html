@@ -78,11 +78,12 @@
 
     <!-- 4 · Manage (rarely): the shared sound library — rename / delete / reorder / favorite. -->
     <p class="sec-label">Manage</p>
-    <div class="card" id="soundsCard">
-      <div class="row">
+    <div class="card collapsed" id="soundsCard">
+      <div class="row cardhead">
         <h2>Sounds</h2>
         <span class="spacer"></span>
         <button id="addSoundBtn" class="btn btn-ghost" style="min-height:44px; padding:0 14px">＋ Add sound</button>
+        <button class="chev" data-icon="chevron-down" aria-label="Expand" aria-expanded="false"></button>
       </div>
       <p class="faint" style="margin:6px 0 0">White / pink / brown are built in. Drop a file here, or tap “Add sound”, to add your own (lullaby, recording) — under 30 MB.</p>
       <div id="uploadList" class="sec"></div>

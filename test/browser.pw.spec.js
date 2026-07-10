@@ -27,6 +27,22 @@ async function armPlayer(page, name, { modern = false } = {}) {
   return page.evaluate(() => localStorage.getItem('mp.deviceId'));
 }
 
+// Room cards render COLLAPSED by default (accordion); reveal a card's body before driving its
+// controls. Expanding one collapses the others — fine, tests drive one card at a time.
+async function expandCard(card) {
+  if (await card.evaluate((el) => el.classList.contains('collapsed'))) {
+    await card.locator('.cardhead .chev').click();
+  }
+  await expect(card).not.toHaveClass(/(^|\s)collapsed(\s|$)/);
+}
+
+// The Manage/Sounds card is collapsed by default; open it before touching the library.
+async function expandSounds(page) {
+  const s = page.locator('#soundsCard');
+  if (await s.evaluate((el) => el.classList.contains('collapsed'))) await s.locator('.cardhead .chev').click();
+  await expect(s).not.toHaveClass(/(^|\s)collapsed(\s|$)/);
+}
+
 // A throwaway controller over ws (Node side) to inject commands the UI can't (e.g. a short timer).
 function nodeCommand(deviceId, fields) {
   return new Promise((resolve, reject) => {
@@ -50,6 +66,7 @@ test('happy path: arm, start, stop, pre-flight (MID)', async ({ browser }) => {
   await expect(controller.locator('#hubStatus')).toContainText('hub connected', { timeout: 10000 });
   const card = controller.locator('.card', { hasText: 'Nursery' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
 
   await card.getByRole('button', { name: /Start|Playing/ }).click();
   await expect(card.locator('.statechip')).toContainText('playing', { timeout: 10000 });
@@ -74,6 +91,7 @@ test('MODERN tier: volume slider drives SET_GAIN with no error', async ({ browse
   await controller.goto('/controller/');
   const card = controller.locator('.card', { hasText: 'NurseryM' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   await expect(card.locator('.lockline')).toContainText(/work while locked/i); // MODERN lock summary
   await card.getByRole('button', { name: /Start|Playing/ }).click();
   await expect(card.locator('.statechip')).toContainText('playing', { timeout: 10000 });
@@ -100,6 +118,7 @@ test('MID tier: per-device lock line + foreground volume slider', async ({ brows
   await c.goto('/controller/');
   const card = c.locator('.card', { hasText: 'NurseryMid' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   await expect(card.locator('.lockline')).toContainText(/Keeps playing while locked/i);
   const slider = card.locator('input[type=range]');
   await expect(slider).toBeVisible(); // MID now has the foreground-volume fallback
@@ -117,6 +136,8 @@ test('sleep timer: hub-owned deadline stops the player on-device', async ({ brow
   const controller = await ctx.newPage();
   await controller.goto('/controller/');
   const card = controller.locator('.card', { hasText: 'NurseryT' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   await card.getByRole('button', { name: /Start|Playing/ }).click();
   await expect(player.locator('#stateLine')).toContainText('Playing', { timeout: 10000 });
 
@@ -136,6 +157,7 @@ test('offline device raises the alarm on the parent phone (when the drop alarm i
   await controller.goto('/controller/');
   const card = controller.locator('.card', { hasText: 'NurseryO' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   await card.getByRole('button', { name: /Start|Playing/ }).click(); // must be PLAYING for a drop to alarm
   await expect(card.locator('.statechip')).toContainText('playing', { timeout: 10000 });
 
@@ -156,6 +178,7 @@ test('room drop does NOT alarm by default (opt-in only)', async ({ browser }) =>
   await controller.goto('/controller/'); // no mp.alarmDrop set → default OFF
   const card = controller.locator('.card', { hasText: 'QuietDrop' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   await card.getByRole('button', { name: /Start|Playing/ }).click(); // even PLAYING, default-off ⇒ no alarm
   await expect(card.locator('.statechip')).toContainText('playing', { timeout: 10000 });
 
@@ -175,10 +198,50 @@ test('enabled but a SILENT room dropping does not alarm (only playing rooms)', a
   await controller.goto('/controller/');
   const card = controller.locator('.card', { hasText: 'SilentDrop' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
 
   await player.close(); // a SILENT room goes offline
   await expect(card).toContainText(/offline/i, { timeout: 10000 }); // …the drop propagated…
   await expect(controller.locator('#alarmBanner')).toBeHidden(); // …but no alarm: it wasn't playing
+  await ctx.close();
+});
+
+test('loading the controller with an already-offline room does not alarm (even when enabled)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'GhostReload');
+  await player.close(); // it's offline in the hub registry BEFORE the controller ever connects
+
+  const controller = await ctx.newPage();
+  await controller.addInitScript(() => localStorage.setItem('mp.alarmDrop', '1')); // enabled — still must not fire on load
+  await controller.goto('/controller/');
+  await expect(controller.locator('.card', { hasText: 'GhostReload' })).toBeVisible({ timeout: 10000 });
+  await controller.waitForTimeout(1500); // give any (wrong) alarm a chance to appear
+  await expect(controller.locator('#alarmBanner')).toBeHidden(); // seeded offline on WELCOME → no transition → no siren
+  await ctx.close();
+});
+
+test('cards form an accordion: rooms + Sounds collapsed, "This device" open; one at a time', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'AccordionRoom');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const room = c.locator('.card', { hasText: 'AccordionRoom' });
+  await expect(room).toBeVisible({ timeout: 10000 });
+  // Defaults: room collapsed, local "This device" expanded, Manage/Sounds collapsed.
+  await expect(room).toHaveClass(/(^|\s)collapsed(\s|$)/);
+  await expect(c.locator('#localPlayer')).not.toHaveClass(/(^|\s)collapsed(\s|$)/);
+  await expect(c.locator('#soundsCard')).toHaveClass(/(^|\s)collapsed(\s|$)/);
+  // Expanding the room collapses "This device" (one open at a time).
+  await room.locator('.cardhead .chev').click();
+  await expect(room).not.toHaveClass(/(^|\s)collapsed(\s|$)/);
+  await expect(c.locator('#localPlayer')).toHaveClass(/(^|\s)collapsed(\s|$)/);
+  // Sounds is independent — opening it does NOT collapse the room.
+  await c.locator('#soundsCard .cardhead .chev').click();
+  await expect(c.locator('#soundsCard')).not.toHaveClass(/(^|\s)collapsed(\s|$)/);
+  await expect(room).not.toHaveClass(/(^|\s)collapsed(\s|$)/);
   await ctx.close();
 });
 
@@ -190,6 +253,8 @@ test('soundscape switch changes what the player reports', async ({ browser }) =>
   const controller = await ctx.newPage();
   await controller.goto('/controller/');
   const card = controller.locator('.card', { hasText: 'NurseryS' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   await card.getByRole('button', { name: /Start|Playing/ }).click();
   await expect(player.locator('#stateLine')).toContainText('Playing', { timeout: 10000 });
 
@@ -208,6 +273,7 @@ test('upload audio: it appears as a sound and plays on the device', async ({ bro
   await controller.goto('/controller/');
   const card = controller.locator('.card', { hasText: 'NurseryU' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   const wav = readFileSync('web/player/assets/white.wav');
   await controller.locator('#fileInput').setInputFiles({ name: 'Nap.wav', mimeType: 'audio/wav', buffer: wav });
   await expect(controller.locator('#uploadStatus')).toContainText(/Added/i, { timeout: 15000 });
@@ -233,6 +299,7 @@ test('manage uploads: rename then delete', async ({ browser }) => {
   await c.locator('#fileInput').setInputFiles({ name: 'ManageMe.wav', mimeType: 'audio/wav', buffer: wav });
   await expect(c.locator('#uploadStatus')).toContainText(/Added/i, { timeout: 15000 });
 
+  await expandSounds(c);
   const list = c.locator('#uploadList');
   const row = list.locator('.uprow', { hasText: 'ManageMe' });
   await expect(row).toBeVisible({ timeout: 10000 });
@@ -243,6 +310,7 @@ test('manage uploads: rename then delete', async ({ browser }) => {
   await list.getByRole('button', { name: 'Save' }).click();
   await expect(list.getByText('BedtimeSong', { exact: true })).toBeVisible({ timeout: 10000 });
   const card = c.locator('.card', { hasText: 'NurseryR' });
+  await expandCard(card);
   await expect(card.getByRole('button', { name: 'BedtimeSong', exact: true })).toBeVisible({ timeout: 10000 });
 
   // delete (two-tap confirm)
@@ -263,9 +331,11 @@ test('drag-to-reorder sounds updates the chip order on device cards', async ({ b
   await c.goto('/controller/');
   const card = c.locator('.card', { hasText: 'NurseryOrd' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   const chips = card.locator('.sound .chips .chip');
   await expect(chips.first()).toHaveText('White noise'); // default order
 
+  await expandSounds(c);
   const list = c.locator('#uploadList');
   await list.scrollIntoViewIfNeeded(); // the local-player card makes the page taller than the viewport
   const brownHandle = list.locator('.uprow', { hasText: 'Brown noise' }).locator('.handle');
@@ -297,6 +367,8 @@ test('arrow reorder: the ▲▼ buttons move a library row and the card chips (b
   await c.goto('/controller/');
   const card = c.locator('.card', { hasText: 'ArrowRoom' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
+  await expandSounds(c);
   const list = c.locator('#uploadList');
   await list.scrollIntoViewIfNeeded();
   const names = list.locator('.uprow .upname');
@@ -321,6 +393,7 @@ test('library refresh self-heals: an upload done while a delete is armed still a
   const c = await ctx.newPage();
   await c.goto('/controller/');
   await expect(c.locator('.card', { hasText: 'DeferRoom' })).toBeVisible({ timeout: 10000 });
+  await expandSounds(c);
   const list = c.locator('#uploadList');
   const wav = readFileSync('web/player/assets/white.wav');
 
@@ -346,6 +419,8 @@ test('favorite a sound: the star pins it to the top of the library and the card 
   await c.goto('/controller/');
   const card = c.locator('.card', { hasText: 'NurseryFav' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
+  await expandSounds(c);
   const list = c.locator('#uploadList');
   const pinkStar = () => list.locator('.uprow', { hasText: 'Pink noise' }).locator('.fav');
   await expect(pinkStar()).toBeVisible({ timeout: 10000 });
@@ -374,6 +449,7 @@ test('inline ＋ chip opens the picker and adds a sound to the card', async ({ b
   await c.goto('/controller/');
   const card = c.locator('.card', { hasText: 'NurseryPlus' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   const wav = readFileSync('web/player/assets/white.wav');
   const [chooser] = await Promise.all([
     c.waitForEvent('filechooser'),
@@ -401,6 +477,7 @@ test('multi-device: two rooms appear; closing one alarms only it by name', async
   await expect(controller.locator('.card', { hasText: 'RoomOne' })).toBeVisible({ timeout: 10000 });
   const cardTwo = controller.locator('.card', { hasText: 'RoomTwo' });
   await expect(cardTwo).toBeVisible({ timeout: 10000 });
+  await expandCard(cardTwo);
   await cardTwo.getByRole('button', { name: /Start|Playing/ }).click(); // playing → its drop will alarm
   await expect(cardTwo.locator('.statechip')).toContainText('playing', { timeout: 10000 });
 
@@ -418,6 +495,7 @@ test('forget: an offline (ghost) device can be removed from the controller (find
   await controller.goto('/controller/');
   const card = controller.locator('.card', { hasText: 'GhostRoom' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   const forget = card.locator('.forget');
   // Forget is offered only once the device is offline.
   await expect(forget).toBeHidden();
@@ -446,6 +524,7 @@ test('baby monitor: the mic loudness meter appears on the controller when monito
   await c.goto('/controller/');
   const card = c.locator('.card', { hasText: 'MonitorRoom' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   // The room-sound meter shows once the device reports a mic level.
   await expect(card.locator('.mic')).toBeVisible({ timeout: 10000 });
   await ctx.close();
@@ -508,6 +587,7 @@ test('alarm auto-de-escalates once the room recovers (P5)', async ({ browser }) 
   await c.goto('/controller/');
   const card = c.locator('.card', { hasText: 'RecoverRoom' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   await card.getByRole('button', { name: /Start|Playing/ }).click(); // playing → its drop alarms
   await expect(card.locator('.statechip')).toContainText('playing', { timeout: 10000 });
 
@@ -577,6 +657,7 @@ test('default-ON sleep timer: a plain Start applies ~45 min; an explicit "off" i
   await c.goto('/controller/');
   const card = c.locator('.card', { hasText: 'DefaultTimerRoom' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   const rem = card.locator('.rem');
 
   // Never chose a timer → 45m is pre-selected and a plain Start applies a ~45:00 countdown.
@@ -603,6 +684,7 @@ test('remembered per-room sleep timer: Start re-applies the last-chosen timer (P
   await c.goto('/controller/');
   const card = c.locator('.card', { hasText: 'NurseryTimer' });
   await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
   const rem = card.locator('.rem');
 
   // Pick 15m → the device starts with a ~15:00 timer, and the chip is remembered (pressed).

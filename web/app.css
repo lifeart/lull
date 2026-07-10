@@ -201,6 +201,17 @@ h2 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; margin: 0;
 @keyframes card-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @media (prefers-color-scheme: dark) { .card { box-shadow: none; border: 0.5px solid var(--border); } }
 .card + .card { margin-top: var(--s4); }
+
+/* Collapsible device cards (accordion, controller). Collapsed = only the title row shows; the
+ * chevron is the toggle button and rotates when open. Header row is a large convenience tap target. */
+.card.collapsed > :not(.cardhead) { display: none; }
+.cardhead { cursor: pointer; -webkit-user-select: none; user-select: none; }
+.chev { -webkit-appearance: none; appearance: none; background: transparent; border: 0; padding: 4px;
+  margin: -4px -2px -4px 4px; color: var(--faint); cursor: pointer; display: inline-flex; align-items: center;
+  min-width: 32px; min-height: 32px; justify-content: center; transition: transform 0.2s var(--ease-out); }
+.chev:active { opacity: 0.5; }
+.chev:focus-visible { outline: none; box-shadow: var(--ring); border-radius: 8px; }
+.card:not(.collapsed) > .cardhead .chev { transform: rotate(180deg); }
 /* Offline: recede the inert controls but keep the header row (name, “offline”, Forget) fully
  * legible — the only actionable thing on a dead card must not be dimmed with it. */
 .card.offline > :not(.row) { opacity: 0.45; }

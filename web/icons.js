@@ -47,7 +47,9 @@ const PATHS = {
   dot: '<circle cx="12" cy="12" r="5" fill="currentColor" stroke="none"/>',
   'dot-open': '<circle cx="12" cy="12" r="4.6"/>',
   grip: '<g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></g>',
-  gear: '<circle cx="12" cy="12" r="3.3"/><path d="M12 2.2v2.6"/><path d="M12 19.2v2.6"/><path d="M21.8 12h-2.6"/><path d="M4.8 12H2.2"/><path d="M18.9 5.1 17 7"/><path d="M7 17 5.1 18.9"/><path d="M18.9 18.9 17 17"/><path d="M7 7 5.1 5.1"/>',
+  // A proper cog (Feather "settings"): rounded teeth, hollow centre — reads as a gear, not a sun.
+  // Use the FULL path (all 8 teeth) — a shortened one dropped the right tooth. (settings-button-sun)
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V15a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
 };
 
 // Escape text destined for innerHTML (icon strings are concatenated with app text; keep it safe/valid).
