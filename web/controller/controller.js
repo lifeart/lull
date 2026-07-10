@@ -918,8 +918,11 @@ function renderLocal() {
   r.tier.hidden = !localState.tier;
   if (st === STATES.STOPPED) localState.fading = false; // the timer fade finished
   r.eq.hidden = !playing;
-  r.state.innerHTML = loading ? '<span class="spinner sm"></span> starting…'
-    : !localState.armed ? '' : localState.fading ? 'winding down…' : playing ? 'playing'
+  // When the eq bars are animating (and the button reads "Pause"), the "playing" text is redundant —
+  // hide the chip so "This device" isn't crowded onto a second line / ellipsized. Show it otherwise.
+  r.state.hidden = playing;
+  r.state.innerHTML = playing ? '' : loading ? '<span class="spinner sm"></span> starting…'
+    : !localState.armed ? '' : localState.fading ? 'winding down…'
     : st === STATES.REQUIRES_GESTURE ? 'tap to resume' : st === STATES.ERROR ? 'error' : 'stopped';
   r.state.className = 'statechip local-state' + (playing ? ' playing' : (st === STATES.ERROR || st === STATES.REQUIRES_GESTURE) ? ' bad' : '');
   r.play.disabled = loading;
@@ -952,18 +955,26 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 // --- add a room: a prefilled setup link (name + token) → zero typing on the old device (P4) ---
 function setupAddRoom() {
-  const btn = $('addRoomBtn'), panel = $('addRoomPanel'), nameEl = $('addRoomName'), linkEl = $('addRoomLink'), copyEl = $('addRoomCopy');
+  const btn = $('addRoomBtn'), panel = $('addRoomPanel'), nameEl = $('addRoomName'), tokenEl = $('addRoomToken'), linkEl = $('addRoomLink'), copyEl = $('addRoomCopy');
   if (!btn) return;
+  // Prefill the token from the controller's own so the new device joins the same hub / family; the
+  // parent can override it (e.g. onboarding a device into a different family in multi-group mode).
+  try { if (tokenEl && !tokenEl.value) tokenEl.value = authToken(); } catch (_e) { /* storage blocked */ }
   const rebuild = () => {
     const name = (nameEl.value || '').trim().slice(0, 60);
-    if (!name) { linkEl.removeAttribute('href'); linkEl.textContent = ''; return; } // no name yet → no link
-    const t = authToken();
+    const empty = !name;
+    copyEl.disabled = empty;   // nothing to add without a name → disable the button
+    linkEl.hidden = empty;     // render the link preview only when there's a room name
+    if (empty) { linkEl.removeAttribute('href'); linkEl.textContent = ''; return; }
+    const t = (tokenEl && tokenEl.value.trim()) || '';
     const url = `${location.origin}/player/?name=${encodeURIComponent(name)}${t ? `#t=${encodeURIComponent(t)}` : ''}`;
     linkEl.href = url; linkEl.textContent = url;
   };
   btn.addEventListener('click', () => { panel.hidden = !panel.hidden; if (!panel.hidden) rebuild(); });
   nameEl.addEventListener('input', rebuild);
+  if (tokenEl) tokenEl.addEventListener('input', rebuild);
   copyEl.addEventListener('click', async () => {
+    if (copyEl.disabled) return; // guard: no name → no link to copy
     rebuild();
     try { await navigator.clipboard.writeText(linkEl.href); copyEl.innerHTML = 'Copied ' + icon('check'); setTimeout(() => { copyEl.textContent = 'Copy link'; }, 1500); }
     catch (_e) { copyEl.textContent = 'Select the link above to copy'; } // clipboard needs a secure context

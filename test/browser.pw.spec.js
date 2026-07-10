@@ -641,7 +641,7 @@ test('local playback: the main app plays sound on THIS device with no speaker cl
 
   // One tap arms + plays locally.
   await local.locator('.local-play').click();
-  await expect(local.locator('.local-state')).toHaveText('playing', { timeout: 10000 });
+  await expect(local.locator('.local-eq')).toBeVisible({ timeout: 10000 }); // playing → eq bars (the "playing" text is dropped as redundant)
   await expect(local.locator('.local-play')).toHaveText(/Pause/i);
   await expect(local.locator('.local-eq')).toBeVisible();
 
@@ -766,8 +766,96 @@ test('loader: "Play here" shows a spinner until the sound is ready (not-instant 
   await expect(local.locator('.local-play')).toContainText(/Starting/i);
 
   // Then it resolves to playing and the spinner is gone.
-  await expect(local.locator('.local-state')).toHaveText('playing', { timeout: 10000 });
+  await expect(local.locator('.local-eq')).toBeVisible({ timeout: 10000 }); // playing → eq bars (the "playing" text is dropped as redundant)
   await expect(local.locator('.local-state .spinner')).toHaveCount(0);
   await expect(local.locator('.local-play')).toHaveText(/Pause/i);
+  await ctx.close();
+});
+
+test('offline: a cached sound plays with no network (Cache Storage / airplane mode)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  // Wait for the service worker to install, activate, and control this page.
+  await c.waitForFunction(() => navigator.serviceWorker && !!navigator.serviceWorker.controller, null, { timeout: 20000 });
+
+  // Play the default sound once online so it's in the audio cache (install also pre-caches it).
+  const local = c.locator('#localPlayer');
+  await expect(local.locator('.local-play')).toHaveText(/Play here/i, { timeout: 10000 });
+  await local.locator('.local-play').click();
+  await expect(local.locator('.local-eq')).toBeVisible({ timeout: 10000 }); // playing → eq bars (the "playing" text is dropped as redundant)
+  await local.locator('.local-play').click(); // pause
+  await expect(local.locator('.local-state')).toHaveText('stopped', { timeout: 10000 });
+
+  // The loop is now in Cache Storage under the shared audio cache.
+  const cached = await c.evaluate(() =>
+    caches.open('mp-audio-v1').then((cache) => cache.match('/player/assets/pink.wav')).then((r) => !!r));
+  expect(cached).toBe(true);
+
+  // Go fully offline and reload — the shell rehydrates from cache…
+  await ctx.setOffline(true);
+  await c.reload();
+  await c.waitForFunction(() => navigator.serviceWorker && !!navigator.serviceWorker.controller, null, { timeout: 20000 });
+  const local2 = c.locator('#localPlayer');
+  await expect(local2.locator('.local-play')).toHaveText(/Play here/i, { timeout: 10000 });
+
+  // …and playback works with NO network — the buffer decodes from the cached loop.
+  await local2.locator('.local-play').click();
+  await expect(local2.locator('.local-eq')).toBeVisible({ timeout: 10000 }); // plays offline → eq bars
+  await ctx.close();
+});
+
+test('double-tap zoom is disabled app-wide (touch-action: manipulation)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const ta = await c.evaluate(() => getComputedStyle(document.body).touchAction);
+  expect(ta).toBe('manipulation');
+  await ctx.close();
+});
+
+test('add-room form: defaults to Bedroom, carries the token, disables + hides the preview when empty', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const c = await ctx.newPage();
+  await c.goto('/controller/#t=house-token'); // controller has a token
+  await c.locator('#addRoomBtn').click();
+  const name = c.locator('#addRoomName'), token = c.locator('#addRoomToken');
+  const link = c.locator('#addRoomLink'), copy = c.locator('#addRoomCopy');
+
+  // Default name is "Bedroom"; the token is prefilled from the controller's own.
+  await expect(name).toHaveValue('Bedroom');
+  await expect(token).toHaveValue('house-token');
+  // The link preview shows and carries name + token; the add button is enabled.
+  await expect(link).toBeVisible();
+  await expect(link).toHaveText(/\/player\/\?name=Bedroom.*#t=house-token/);
+  await expect(copy).toBeEnabled();
+
+  // Clearing the name disables the button and hides the link preview.
+  await name.fill('');
+  await expect(copy).toBeDisabled();
+  await expect(link).toBeHidden();
+
+  // A different token flows into the generated link.
+  await name.fill('Nursery');
+  await token.fill('other-family');
+  await expect(link).toHaveText(/name=Nursery.*#t=other-family/);
+  await expect(copy).toBeEnabled();
+  await ctx.close();
+});
+
+test('this device: the card header keeps the same height when playback starts (title stays one line)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const head = c.locator('#localPlayer .cardhead');
+  const play = c.locator('#localPlayer .local-play');
+  await expect(play).toHaveText(/Play here/i, { timeout: 10000 });
+  const stoppedH = await head.evaluate((el) => el.offsetHeight);
+
+  await play.click();
+  await expect(c.locator('#localPlayer .local-eq')).toBeVisible({ timeout: 10000 }); // playing → eq bars showing
+  await expect(c.locator('#localPlayer .local-state')).toBeHidden(); // redundant "playing" text is dropped
+  const playingH = await head.evaluate((el) => el.offsetHeight);
+  expect(playingH).toBe(stoppedH); // no jump — the title didn't wrap to a second line
   await ctx.close();
 });
