@@ -24,8 +24,13 @@ function fakeGainParam() {
     value: 0, calls: [],
     cancelScheduledValues() {}, setValueAtTime(v) { this.value = v; this.calls.push(['set', v]); },
     setTargetAtTime(v) { this.calls.push(['target', v]); },
+    linearRampToValueAtTime(v) { this.value = v; this.calls.push(['linear', v]); },
+    exponentialRampToValueAtTime(v) { this.value = v; this.calls.push(['exp', v]); },
+    setValueCurveAtTime(curve, _start, dur) { const v = curve[curve.length - 1]; this.value = v; this.calls.push(['curve', v, dur]); },
   };
 }
+// Every gain-automation kind that ends on a value (a fade-in curve, a ramp, a target approach).
+const rampValues = (gain) => gain.gain.calls.filter((c) => ['target', 'linear', 'exp', 'curve'].includes(c[0])).map((c) => c[1]);
 
 // MODERN tier engine wired to fakes (bypasses arm()'s real Web Audio construction).
 function modernEngine() {
@@ -66,9 +71,26 @@ test('MODERN: START plays the element, ramps gain up, reports PLAYING', async ()
   assert.equal(eng.el.paused, false);
   assert.equal(eng.getState(), STATES.PLAYING);
   assert.equal(eng.getGain(), 0.3);
-  const targets = eng.gain.gain.calls.filter((c) => c[0] === 'target').map((c) => c[1]);
-  assert.ok(targets.length > 0, 'gain ramps');
-  assert.ok(Math.abs(Math.max(...targets) - 0.3) < 1e-6, 'ramps to the requested gain, not a fixed value');
+  const ramps = rampValues(eng.gain);
+  assert.ok(ramps.length > 0, 'gain ramps up (fade-in)');
+  assert.ok(Math.abs(Math.max(...ramps) - 0.3) < 1e-6, 'ramps to the requested gain, not a fixed value');
+});
+
+test('start-from-silence fades in over ~3s; a volume nudge while playing does NOT', async () => {
+  const eng = modernEngine();
+  // From silence → a fade-in CURVE (the shock-free swell) over 3s, landing on the target.
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'white' });
+  const fadeIn = eng.gain.gain.calls.find((c) => c[0] === 'curve');
+  assert.ok(fadeIn, 'start from silence uses a fade-in curve');
+  assert.ok(Math.abs(fadeIn[1] - 0.3) < 1e-6, 'fade-in lands on the requested gain');
+  assert.equal(fadeIn[2], 3, 'over ~3 seconds');
+
+  // A volume change WHILE playing must stay responsive: a quick ramp, NOT another 3s fade-in.
+  eng.gain.gain.calls.length = 0;
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.5, soundscape: 'white' });
+  assert.ok(!eng.gain.gain.calls.some((c) => c[0] === 'curve'), 'no 3s fade-in on a mid-playback volume nudge');
+  assert.ok(eng.gain.gain.calls.some((c) => c[0] === 'target'), 'uses the quick click-free ramp instead');
+  assert.equal(eng.getGain(), 0.5);
 });
 
 test('MODERN: STOP ramps gain to ~0 but keeps the element playing (keep-alive)', async () => {
@@ -189,8 +211,8 @@ test('GAPLESS: START starts a LOOPING buffer source, ramps gain, keeps the keep-
   assert.equal(eng.getState(), STATES.PLAYING);
   assert.equal(eng.getGain(), 0.3);
   assert.equal(eng.el.paused, false, 'the muted keep-alive element keeps playing');
-  const targets = eng.gain.gain.calls.filter((c) => c[0] === 'target').map((c) => c[1]);
-  assert.ok(Math.abs(Math.max(...targets) - 0.3) < 1e-6, 'ramps the gain bus to the requested volume');
+  const ramps = rampValues(eng.gain);
+  assert.ok(Math.abs(Math.max(...ramps) - 0.3) < 1e-6, 'ramps the gain bus to the requested volume');
 });
 
 test('GAPLESS: a paused (muted) keep-alive element does NOT downgrade PLAYING — the buffer is the source', async () => {
@@ -245,8 +267,8 @@ test('GAPLESS: MID desktop (element.volume honored) uses foreground volume on th
   await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.4, soundscape: 'white' });
   assert.equal(eng.getState(), STATES.PLAYING);
   assert.equal(eng.getGain(), 0.4, 'foreground volume actuated via the gain node');
-  const targets = eng.gain.gain.calls.filter((c) => c[0] === 'target').map((c) => c[1]);
-  assert.ok(Math.abs(Math.max(...targets) - 0.4) < 1e-6);
+  const ramps = rampValues(eng.gain);
+  assert.ok(Math.abs(Math.max(...ramps) - 0.4) < 1e-6);
 });
 
 test('_canUseBuffer: gapless where bg Web Audio survives; element fallback on old iOS', () => {

@@ -24,6 +24,11 @@
 // root) AND to repo/shared/protocol.js in Node, so this module is unit-testable.
 import { STATES, TIERS, VERBS, usesGain, foregroundVolume, clampGain } from '../../shared/protocol.js';
 
+// Starting from silence, swell playback in over this long so it never "hits" the room (звуковой удар).
+// Only the GAIN-routed path (local player, MODERN, desktop/Android) can fade; an unrouted old-iOS
+// element has no software volume, so it starts at its fixed level.
+const PLAYBACK_FADE_IN_SEC = 3;
+
 export class AudioEngine {
   constructor({ tier, caps, onState }) {
     this.tier = tier;
@@ -171,7 +176,11 @@ export class AudioEngine {
       if (this.el.paused) { try { await this.el.play(); } catch (e) { this._fail(e.message); return; } }
       if (on && this.useBuffer && !this._bufSrc) this._startBuffer(); // (re)start a dropped gapless loop
       const softVolume = usesGain(this.tier) || this.fgVolume;
-      this._rampGain(on ? (softVolume ? g : 1) : 0);
+      const target = on ? (softVolume ? g : 1) : 0;
+      // Starting from silence → gentle 3s fade-in (a raised-cosine swell). A volume nudge while
+      // already sounding, or a stop, uses the quick click-free ramp so it stays responsive.
+      if (on && !(this.currentGain > 0)) this._fadeInGain(target, PLAYBACK_FADE_IN_SEC);
+      else this._rampGain(target);
       this.currentGain = softVolume ? (on ? g : 0) : (on ? 1 : 0);
       if (on) {
         // Don't report PLAYING unless audio is actually flowing (a suspended ctx = silence).
@@ -210,6 +219,25 @@ export class AudioEngine {
     // click-free ~1.2s fade
     p.setTargetAtTime(Math.max(0.0001, target), now, 0.35);
     p.setValueAtTime(target, now + 1.5);
+  }
+
+  // Shock-free fade-in from silence to `target` over `seconds`: a raised-cosine S-curve (gentle at
+  // both the onset AND the arrival — no abrupt "hit"), degrading to a linear ramp / exponential
+  // approach where the richer AudioParam methods aren't available (very old WebKit, test fakes).
+  _fadeInGain(target, seconds) {
+    if (!this.gain || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const p = this.gain.gain;
+    const t = Math.max(0.0001, target);
+    if (p.cancelScheduledValues) p.cancelScheduledValues(now);
+    if (typeof p.setValueCurveAtTime === 'function') {
+      const N = 64, curve = new Float32Array(N);
+      for (let i = 0; i < N; i++) curve[i] = Math.max(0.0001, t * (0.5 - 0.5 * Math.cos((Math.PI * i) / (N - 1))));
+      try { p.setValueCurveAtTime(curve, now, seconds); return; } catch (_e) { /* overlap/unsupported → fall through */ }
+    }
+    if (p.setValueAtTime) p.setValueAtTime(0.0001, now); // start at silence so there's no onset step
+    if (typeof p.linearRampToValueAtTime === 'function') { p.linearRampToValueAtTime(t, now + seconds); return; }
+    if (typeof p.setTargetAtTime === 'function') { p.setTargetAtTime(t, now, seconds / 3); if (p.setValueAtTime) p.setValueAtTime(target, now + seconds); }
   }
 
   // Gentle sleep-timer wind-down: ramp to silence over `seconds`, then stop. Only foreground/gain
