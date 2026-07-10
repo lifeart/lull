@@ -25,7 +25,7 @@
     <div class="appbar">
       <h1>Rooms</h1>
       <span class="appbar-right">
-        <button id="tokenBtn" class="iconbtn" aria-label="Access token" title="Access token" data-icon="lock"></button>
+        <button id="tokenBtn" class="iconbtn" aria-label="Settings" title="Settings" data-icon="gear"></button>
         <span id="hubStatus" class="hub">…</span>
       </span>
     </div>
@@ -36,6 +36,10 @@
         <input id="tokenInput" class="input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="paste token" />
         <button id="tokenSave" class="btn btn-primary">Save</button>
       </div>
+      <label class="checkrow" for="dropAlarmToggle" style="margin-top:8px">
+        <input type="checkbox" id="dropAlarmToggle" />
+        <span>Alarm if a <em>playing</em> room drops offline<br /><small class="faint">Off by default. Only for a room that was playing; never sounds while THIS device is playing.</small></span>
+      </label>
     </div>
   </header>
 

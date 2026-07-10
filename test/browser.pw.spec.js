@@ -126,20 +126,59 @@ test('sleep timer: hub-owned deadline stops the player on-device', async ({ brow
   await ctx.close();
 });
 
-test('offline device raises the alarm on the parent phone', async ({ browser }) => {
+test('offline device raises the alarm on the parent phone (when the drop alarm is enabled)', async ({ browser }) => {
   const ctx = await browser.newContext();
   const player = await ctx.newPage();
   await armPlayer(player, 'NurseryO');
 
   const controller = await ctx.newPage();
+  await controller.addInitScript(() => localStorage.setItem('mp.alarmDrop', '1')); // opt in (off by default)
   await controller.goto('/controller/');
-  await expect(controller.locator('.card', { hasText: 'NurseryO' })).toBeVisible({ timeout: 10000 });
+  const card = controller.locator('.card', { hasText: 'NurseryO' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  await card.getByRole('button', { name: /Start|Playing/ }).click(); // must be PLAYING for a drop to alarm
+  await expect(card.locator('.statechip')).toContainText('playing', { timeout: 10000 });
 
-  await player.close(); // device goes offline -> reconcileAlarms fires the alarm
+  await player.close(); // a PLAYING device goes offline -> reconcileAlarms fires the alarm
   await expect(controller.locator('#alarmBanner')).toBeVisible({ timeout: 10000 });
   await expect(controller.locator('#alarmText')).toContainText('NurseryO');
   await controller.click('#alarmDismiss');
   await expect(controller.locator('#alarmBanner')).toBeHidden();
+  await ctx.close();
+});
+
+test('room drop does NOT alarm by default (opt-in only)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'QuietDrop');
+
+  const controller = await ctx.newPage();
+  await controller.goto('/controller/'); // no mp.alarmDrop set → default OFF
+  const card = controller.locator('.card', { hasText: 'QuietDrop' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  await card.getByRole('button', { name: /Start|Playing/ }).click(); // even PLAYING, default-off ⇒ no alarm
+  await expect(card.locator('.statechip')).toContainText('playing', { timeout: 10000 });
+
+  await player.close(); // goes offline
+  await expect(card).toContainText(/offline/i, { timeout: 10000 }); // the drop DID propagate to the card…
+  await expect(controller.locator('#alarmBanner')).toBeHidden(); // …but no siren fires by default
+  await ctx.close();
+});
+
+test('enabled but a SILENT room dropping does not alarm (only playing rooms)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'SilentDrop'); // armed but never started → stays silent/STOPPED
+
+  const controller = await ctx.newPage();
+  await controller.addInitScript(() => localStorage.setItem('mp.alarmDrop', '1')); // alarm ON…
+  await controller.goto('/controller/');
+  const card = controller.locator('.card', { hasText: 'SilentDrop' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+
+  await player.close(); // a SILENT room goes offline
+  await expect(card).toContainText(/offline/i, { timeout: 10000 }); // …the drop propagated…
+  await expect(controller.locator('#alarmBanner')).toBeHidden(); // …but no alarm: it wasn't playing
   await ctx.close();
 });
 
@@ -357,9 +396,13 @@ test('multi-device: two rooms appear; closing one alarms only it by name', async
   await armPlayer(p2, 'RoomTwo');
 
   const controller = await ctxC.newPage();
+  await controller.addInitScript(() => localStorage.setItem('mp.alarmDrop', '1')); // opt into the drop alarm
   await controller.goto('/controller/');
   await expect(controller.locator('.card', { hasText: 'RoomOne' })).toBeVisible({ timeout: 10000 });
-  await expect(controller.locator('.card', { hasText: 'RoomTwo' })).toBeVisible({ timeout: 10000 });
+  const cardTwo = controller.locator('.card', { hasText: 'RoomTwo' });
+  await expect(cardTwo).toBeVisible({ timeout: 10000 });
+  await cardTwo.getByRole('button', { name: /Start|Playing/ }).click(); // playing → its drop will alarm
+  await expect(cardTwo.locator('.statechip')).toContainText('playing', { timeout: 10000 });
 
   await p2.close();
   await expect(controller.locator('#alarmText')).toContainText('RoomTwo', { timeout: 10000 });
@@ -461,10 +504,14 @@ test('alarm auto-de-escalates once the room recovers (P5)', async ({ browser }) 
   await armPlayer(p, 'RecoverRoom');
 
   const c = await ctx.newPage();
+  await c.addInitScript(() => localStorage.setItem('mp.alarmDrop', '1')); // opt into the drop alarm
   await c.goto('/controller/');
-  await expect(c.locator('.card', { hasText: 'RecoverRoom' })).toBeVisible({ timeout: 10000 });
+  const card = c.locator('.card', { hasText: 'RecoverRoom' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  await card.getByRole('button', { name: /Start|Playing/ }).click(); // playing → its drop alarms
+  await expect(card.locator('.statechip')).toContainText('playing', { timeout: 10000 });
 
-  await p.close(); // offline → siren + banner
+  await p.close(); // a PLAYING room goes offline → siren + banner
   await expect(c.locator('#alarmText')).toContainText('RecoverRoom', { timeout: 10000 });
 
   // Bring the SAME device back (same context → same deviceId) and re-arm via the tap-to-arm overlay.

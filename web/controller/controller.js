@@ -29,6 +29,10 @@ const micHigh = new Map(); // deviceId -> sustained-loud counter (baby-monitor c
 // Cry thresholds (0..1 room loudness). ON high + sustained → alarm; hysteresis to OFF clears it.
 const CRY_ON = 0.6, CRY_OFF = 0.35, CRY_SUSTAIN = 3;
 
+// Opt-in, OFF by default: sound the parent-phone siren when a room drops offline / stops
+// responding. It fired on every transient wifi hiccup or tab reclaim, so it's now a setting.
+const dropAlarmEnabled = () => { try { return localStorage.getItem('mp.alarmDrop') === '1'; } catch (_e) { return false; } };
+
 // --- token (optional shared secret; distributed via URL, persisted, appended to WS) ---
 function authToken() {
   const q = new URL(location.href).searchParams.get('token');
@@ -81,6 +85,14 @@ function setupTokenUI() {
   };
   save.addEventListener('click', commit);
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+  // Drop-offline alarm preference (opt-in; persisted per device).
+  const drop = $('dropAlarmToggle');
+  if (drop) {
+    try { drop.checked = dropAlarmEnabled(); } catch (_e) { /* storage blocked */ }
+    drop.addEventListener('change', () => {
+      try { localStorage.setItem('mp.alarmDrop', drop.checked ? '1' : '0'); } catch (e) { console.warn('alarm pref save blocked', e); }
+    });
+  }
 }
 function send(obj) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); }
 
@@ -139,8 +151,10 @@ function reconcileAlarms(next) {
     const st = (d.reported || {}).state;
     if (prev) {
       const wasPlaying = prev.state === STATES.PLAYING;
-      // A device that was online and dropped: alarm the awake parent (we can't revive it remotely).
-      if (prev.online && !d.online) raiseAlarm(d.deviceId, 'went offline — the tab may have been reclaimed');
+      // A PLAYING device that dropped: alarm the awake parent (we can't revive it remotely). A room
+      // that was silent/stopped going offline is NOT an emergency — nothing was covering the baby —
+      // so it never alarms. (user: don't alarm unless the controlled device was actually playing)
+      if (prev.online && !d.online && wasPlaying) raiseAlarm(d.deviceId, 'went offline — the tab may have been reclaimed');
       // ERROR is edge-triggered (only on entry) so the parent can dismiss it while walking to the
       // room instead of it re-firing on every ~5s telemetry broadcast. (finding #6)
       else if (d.online && st === STATES.ERROR && prev.state !== STATES.ERROR) raiseAlarm(d.deviceId, 'audio error — not playing');
@@ -205,6 +219,12 @@ function onAckTimeout(cmdId) {
 let alarmDeviceId = null; // the device that raised the ACTIVE alarm (for P5 auto-de-escalation)
 let alarmKind = null;     // 'failure' | 'cry' — cries de-escalate on quiet, failures on recovery
 function raiseAlarm(deviceId, why, kind = 'failure') {
+  // NEVER blast a siren out of THIS device while it's the one playing sound — the parent may be
+  // using the controller itself as the speaker next to a sleeping baby. (any kind)
+  if (localPlaying()) return;
+  // The room-drop / no-response siren is opt-in and OFF by default (a wifi blip shouldn't wake the
+  // house). Cry alarms (baby monitor) are a separate, deliberately-armed feature and still fire.
+  if (kind === 'failure' && !dropAlarmEnabled()) return;
   const d = devices.find((x) => x.deviceId === deviceId);
   const name = d ? d.friendlyName : deviceId;
   alarmDeviceId = deviceId; alarmKind = kind;

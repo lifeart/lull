@@ -47,6 +47,7 @@ const PATHS = {
   dot: '<circle cx="12" cy="12" r="5" fill="currentColor" stroke="none"/>',
   'dot-open': '<circle cx="12" cy="12" r="4.6"/>',
   grip: '<g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></g>',
+  gear: '<circle cx="12" cy="12" r="3.3"/><path d="M12 2.2v2.6"/><path d="M12 19.2v2.6"/><path d="M21.8 12h-2.6"/><path d="M4.8 12H2.2"/><path d="M18.9 5.1 17 7"/><path d="M7 17 5.1 18.9"/><path d="M18.9 18.9 17 17"/><path d="M7 7 5.1 5.1"/>',
 };
 
 // Escape text destined for innerHTML (icon strings are concatenated with app text; keep it safe/valid).
