@@ -3,11 +3,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hub } from '../hub/ws.js';
+import { DEFAULT_GROUP, groupKey } from '../shared/protocol.js';
 
 const fakeStore = { list: () => [], get: () => null };
+const KEY = groupKey(DEFAULT_GROUP, 'x'); // players are keyed by (groupId, deviceId)
 function mkFakeWs() {
   return {
-    _meta: { role: 'player', deviceId: 'x', alive: true },
+    _meta: { role: 'player', groupId: DEFAULT_GROUP, deviceId: 'x', alive: true },
     readyState: 1, // OPEN
     pings: 0, terminated: false, sent: [],
     ping() { this.pings++; },
@@ -20,7 +22,7 @@ function mkFakeWs() {
 test('heartbeat pings, survives on pong, and reaps a socket that misses a pong', () => {
   const hub = new Hub(fakeStore);
   const ws = mkFakeWs();
-  hub.players.set('x', ws);
+  hub.players.set(KEY, ws);
 
   hub._heartbeatTick(); // t1: alive true -> false, ping
   assert.equal(ws._meta.alive, false);
@@ -40,8 +42,8 @@ test('heartbeat pings, survives on pong, and reaps a socket that misses a pong',
 test('_onClose removes a player from the registry', () => {
   const hub = new Hub(fakeStore);
   const ws = mkFakeWs();
-  hub.players.set('x', ws);
+  hub.players.set(KEY, ws);
   hub._onClose(ws);
-  assert.equal(hub.players.has('x'), false);
+  assert.equal(hub.players.has(KEY), false);
   hub.stop();
 });

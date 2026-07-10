@@ -22,6 +22,9 @@ services:
       # start with an empty token unless MP_ALLOW_OPEN=1. Generate with `openssl rand -hex 24`.
       - MP_TOKEN=${MP_TOKEN}
       - MP_ALLOW_OPEN=${MP_ALLOW_OPEN:-} # set to 1 to intentionally run OPEN on a trusted LAN
+      # Multi-family: set to 1 to share this hub across households — each family uses its own token and
+      # gets a fully isolated group (rooms, controls, uploads). MP_TOKEN is then optional. See docs/DEPLOY.md.
+      - MP_MULTIGROUP=${MP_MULTIGROUP:-}
     volumes:
       - hub_data:/data
     restart: unless-stopped

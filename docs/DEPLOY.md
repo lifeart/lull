@@ -55,6 +55,32 @@ The hub ships a real auth model; you don't add code, you set a secret.
   you type it exactly once. (`?token=` still works as a fallback.)
 - Generate one: `openssl rand -hex 24`.
 
+### Sharing one hub across families (multi-group)
+
+Run **one** hub for several households, each fully isolated, by setting **`MP_MULTIGROUP=1`**.
+
+- **How it works — token = family.** Every distinct token becomes its own isolated **group**: its own
+  rooms, its own controls, and its own uploaded sounds. A controller only ever sees and can command
+  devices in its group; two families can even name a device the same thing without colliding; and a
+  command aimed at another family's device is indistinguishable from one aimed at a device that doesn't
+  exist (no cross-group probing). The group id is a **hash of the token** — there is **no accounts system
+  and no server-side registry** to maintain. Trust-on-first-use: whoever holds a token *is* that group.
+- **Onboarding a family** = generate a token (`openssl rand -hex 24`) and send them one link,
+  `https://your-host/controller/#t=THEIR_TOKEN`. They tap it once; it's remembered, and their
+  "Add a room" link carries it to their nursery devices. Each family manages its own rooms and sounds.
+- **In this mode `MP_TOKEN` is not required.** A token is still required on the network — verifyClient
+  rejects tokenless clients (401) unless you also set `MP_ALLOW_OPEN=1`, which lets tokenless clients
+  share one common `default` group (loopback is always allowed for local dev).
+- **Rotating / removing a family** = give them a new token (old token → a now-empty group). Per-token
+  revocation is inherent: change the token and the old one no longer resolves to their data.
+- **Caveat (same as single-token):** uploaded audio files at `/uploads/<group>/…` are obscure but not
+  themselves token-gated on the raw `GET` (random ids under an 80-bit group hash), so `<audio>` playback
+  needs no token on every media request. The library listing, uploads, and all mutations **are** fully
+  group-gated. Don't put secrets in the audio.
+- **Backward compatible:** leave `MP_MULTIGROUP` unset and the hub is the original single-group system —
+  one `MP_TOKEN`, one shared library. Existing `data/` needs no migration (the default group keeps the
+  flat `data/uploads/` layout; per-family groups nest under `data/uploads/<group>/`).
+
 ### For a public Cloudflare Tunnel specifically
 
 1. **Set `MP_TOKEN`.** Necessary and sufficient as the app-level gate; the fail-closed policy enforces it.

@@ -4,6 +4,12 @@
 // fails, so "the socket object exists" != "connected". The hub pings every socket and reaps
 // ones that stop ponging. Controllers learn a device died via a devices broadcast, then alarm
 // the (awake) parent — you cannot revive a suspended nursery tab from here. (docs/DESIGN.md §1.4)
+//
+// Multi-tenancy: every connection carries a groupId (resolved from its token in hub/auth.js and
+// stashed on the request by verifyClient). Players are keyed by groupKey(groupId, deviceId) and
+// controllers are bucketed per group, so a controller only ever sees/commands devices in ITS
+// group and every broadcast fans out to same-group controllers only. The group is derived from
+// the authenticated token, never from client-supplied data, so a client can't cross the boundary.
 
 import { WebSocket } from 'ws';
 import { StateManager } from './state.js';
@@ -12,6 +18,8 @@ import {
   VERBS,
   HEARTBEAT_MS,
   HEARTBEAT_GRACE_MS,
+  DEFAULT_GROUP,
+  groupKey,
   makeWelcome,
   makeSnapshot,
   makeAck,
@@ -20,7 +28,8 @@ import {
 } from '../shared/protocol.js';
 
 const HELLO_TIMEOUT_MS = 10000; // reap a socket that connects but never identifies
-const MAX_DEVICES = 64; // registry cap so a flood of new deviceIds can't grow state.json unbounded
+const MAX_DEVICES = 64; // per-GROUP registry cap so one family can't grow state unbounded
+const MAX_GROUPS = 128; // TOFU cap: distinct token-groups that may register devices (stray tokens can't grow state without bound)
 const DEVICE_ID_RE = /^[\w-]{1,64}$/; // letters/digits/_/- only
 // Per-socket token bucket: caps message rate so a buggy/compromised client stuck in a report loop
 // can't spin the event loop or amplify O(devices×controllers) broadcasts. (finding #16)
@@ -33,20 +42,23 @@ const MSG_REFILL_PER_SEC = 25; // steady-state; well above real traffic (~1 msg/
 export class Hub {
   constructor(store) {
     this.store = store;
-    this.players = new Map(); // deviceId -> ws
-    this.controllers = new Set(); // ws
+    this.players = new Map(); // groupKey(groupId, deviceId) -> ws
+    this.controllers = new Map(); // groupId -> Set<ws>
     this.state = new StateManager(store, {
-      onDesiredChanged: (deviceId) => {
+      onDesiredChanged: (groupId, deviceId) => {
         // Hub-owned timer flipped desired (e.g. sleep timer elapsed): tell player + controllers.
-        this._pushSnapshot(deviceId);
-        this._broadcastDevices();
+        this._pushSnapshot(groupId, deviceId);
+        this._broadcastDevices(groupId);
       },
     });
     this._hb = null;
   }
 
-  handleConnection(ws) {
-    ws._meta = { role: null, deviceId: null, alive: true, graceTimer: null, tokens: MSG_BUCKET_CAP, lastMsgMs: Date.now() };
+  handleConnection(ws, req) {
+    // The group was resolved from the token by verifyClient and stashed on the request. Tests (and
+    // the loopback dev box) may connect with no req → the single DEFAULT_GROUP.
+    const groupId = (req && req._groupId) || DEFAULT_GROUP;
+    ws._meta = { role: null, groupId, deviceId: null, alive: true, graceTimer: null, tokens: MSG_BUCKET_CAP, lastMsgMs: Date.now() };
     // A socket that connects but never sends `hello` (crash before hello, frozen tab, malicious
     // flood) is in no map and the heartbeat can't reap it — so give it a hard deadline.
     ws._meta.helloTimer = setTimeout(() => {
@@ -136,8 +148,8 @@ export class Hub {
         this._onReport(ws, msg);
         break;
       case MSG.ACK:
-        // Player ACKing a command/probe -> forward to all controllers.
-        this._broadcastToControllers(msg);
+        // Player ACKing a command/probe -> forward to the controllers in ITS group only.
+        this._broadcastToControllers(ws._meta.groupId, msg);
         break;
       case MSG.COMMAND:
         this._onCommand(ws, msg);
@@ -152,6 +164,7 @@ export class Hub {
 
   _onHello(ws, msg) {
     if (ws._meta.helloTimer) { clearTimeout(ws._meta.helloTimer); ws._meta.helloTimer = null; }
+    const groupId = ws._meta.groupId;
     if (msg.role === 'player') {
       const id = msg.deviceId;
       if (typeof id !== 'string' || !DEVICE_ID_RE.test(id)) {
@@ -159,34 +172,49 @@ export class Hub {
         try { ws.terminate(); } catch (err) { console.error('[ws] terminate bad-id failed:', err.message); }
         return;
       }
-      if (!this.store.get(id) && this.store.list().length >= MAX_DEVICES) {
-        this._send(ws, { t: MSG.ERROR, error: 'device registry full' });
-        try { ws.terminate(); } catch (err) { console.error('[ws] terminate over-cap failed:', err.message); }
-        return;
+      // Per-group caps: a family can register up to MAX_DEVICES, and a brand-new group (its first
+      // device) is refused once MAX_GROUPS distinct groups already hold devices — so an attacker
+      // spraying distinct tokens can't grow state.json without bound.
+      const known = !!this.store.get(groupId, id);
+      if (!known) {
+        if (this.store.countInGroup(groupId) >= MAX_DEVICES) {
+          this._send(ws, { t: MSG.ERROR, error: 'device registry full' });
+          try { ws.terminate(); } catch (err) { console.error('[ws] terminate over-cap failed:', err.message); }
+          return;
+        }
+        if (this.store.countInGroup(groupId) === 0 && this.store.groupCount() >= MAX_GROUPS) {
+          this._send(ws, { t: MSG.ERROR, error: 'group registry full' });
+          try { ws.terminate(); } catch (err) { console.error('[ws] terminate over-group-cap failed:', err.message); }
+          return;
+        }
       }
       ws._meta.role = msg.role;
       ws._meta.deviceId = id;
-      // A frozen iOS socket fires no close event; on reconnect (same deviceId) proactively reap
-      // the stale one so the heartbeat/FD isn't leaked and routing points at the live socket.
-      const old = this.players.get(id);
+      const k = groupKey(groupId, id);
+      // A frozen iOS socket fires no close event; on reconnect (same group+deviceId) proactively
+      // reap the stale one so the heartbeat/FD isn't leaked and routing points at the live socket.
+      const old = this.players.get(k);
       if (old && old !== ws) {
         try { old.terminate(); } catch (err) { console.error('[ws] terminate stale player failed:', err.message); }
       }
-      this.players.set(id, ws);
+      this.players.set(k, ws);
       this.state.register({
-        deviceId: msg.deviceId,
+        groupId,
+        deviceId: id,
         friendlyName: msg.friendlyName,
         caps: msg.caps,
         tier: (msg.caps && msg.caps.tier) || undefined,
       });
-      this._send(ws, makeWelcome({ serverEpochMs: Date.now(), devices: [] }));
+      this._send(ws, makeWelcome({ serverEpochMs: Date.now(), devices: [], groupId }));
       // Authoritative desired state on every (re)connect — REPLACE-ALL, timer reconciled.
-      this._pushSnapshot(msg.deviceId);
-      this._broadcastDevices();
+      this._pushSnapshot(groupId, id);
+      this._broadcastDevices(groupId);
     } else if (msg.role === 'controller') {
       ws._meta.role = msg.role;
-      this.controllers.add(ws);
-      this._send(ws, makeWelcome({ serverEpochMs: Date.now(), devices: this._deviceList() }));
+      let set = this.controllers.get(groupId);
+      if (!set) { set = new Set(); this.controllers.set(groupId, set); }
+      set.add(ws);
+      this._send(ws, makeWelcome({ serverEpochMs: Date.now(), devices: this._deviceList(groupId), groupId }));
     } else {
       this._send(ws, { t: MSG.ERROR, error: `unknown role: ${msg.role}` });
     }
@@ -194,7 +222,8 @@ export class Hub {
 
   _onReport(ws, msg) {
     if (ws._meta.role !== 'player') return;
-    this.state.setReported(ws._meta.deviceId, {
+    const groupId = ws._meta.groupId;
+    this.state.setReported(groupId, ws._meta.deviceId, {
       state: msg.state,
       gainLinear: msg.gainLinear,
       remainingSec: msg.remainingSec,
@@ -202,11 +231,13 @@ export class Hub {
       tier: msg.tier,
       micLevel: msg.micLevel, // baby-monitor room loudness (0..1 or undefined) — M8a
     });
-    this._broadcastDevices();
+    this._broadcastDevices(groupId);
   }
 
   _onCommand(ws, msg) {
-    // Controllers may command any device; a player may only command ITSELF (lock-screen intent).
+    const groupId = ws._meta.groupId;
+    // Controllers may command any device IN THEIR GROUP; a player may only command ITSELF
+    // (lock-screen intent). A target in another group resolves to nothing here.
     const selfPlayer = ws._meta.role === 'player' && msg.target === ws._meta.deviceId;
     if (ws._meta.role !== 'controller' && !selfPlayer) return;
     const check = validateCommand(msg);
@@ -221,21 +252,23 @@ export class Hub {
       msg = { ...msg, endsAtEpochMs: Date.now() + Number(msg.durationMs) };
       delete msg.durationMs;
     }
-    // Save intent regardless of whether the player is reachable (it conforms on reconnect).
-    const device = this.state.applyCommand(msg.target, msg);
+    // Save intent regardless of whether the player is reachable (it conforms on reconnect). A
+    // target that doesn't exist IN THIS GROUP returns the same "unknown device" as a truly-missing
+    // one, so a wrong-group target can't be used as a cross-group existence oracle.
+    const device = this.state.applyCommand(groupId, msg.target, msg);
     if (!device) {
       this._send(ws, makeAck({ deviceId: msg.target, cmdId: msg.cmdId, ok: false, error: 'unknown device' }));
       return;
     }
-    this._broadcastDevices();
+    this._broadcastDevices(groupId);
 
     // Player-originated intent: make it authoritative and echo a snapshot; no relay/ACK loop.
     if (selfPlayer) {
-      this._pushSnapshot(msg.target);
+      this._pushSnapshot(groupId, msg.target);
       return;
     }
 
-    const player = this.players.get(msg.target);
+    const player = this.players.get(groupKey(groupId, msg.target));
     if (!player) {
       // Offline: the controller must know so it can alarm the parent. Desired is still saved.
       this._send(ws, makeAck({ deviceId: msg.target, cmdId: msg.cmdId, ok: false, error: 'device offline' }));
@@ -244,7 +277,7 @@ export class Hub {
     // If the timer's deadline was already in the past, applyCommand synchronously fired it and
     // desired is now STOP (a STOP snapshot was already pushed). Relaying the original START would
     // restart audio for ~1s until the player's safety net catches up, so ACK success and skip it.
-    const reconciled = this.state.getDesired(msg.target);
+    const reconciled = this.state.getDesired(groupId, msg.target);
     if ((msg.verb === VERBS.SET_TIMER || msg.verb === VERBS.START) && reconciled && reconciled.verb === VERBS.STOP) {
       this._send(ws, makeAck({ deviceId: msg.target, cmdId: msg.cmdId, ok: true }));
       return;
@@ -254,7 +287,7 @@ export class Hub {
 
   _onProbe(ws, msg) {
     if (ws._meta.role !== 'controller') return;
-    const player = this.players.get(msg.target);
+    const player = this.players.get(groupKey(ws._meta.groupId, msg.target));
     if (!player) {
       this._send(ws, makeAck({ deviceId: msg.target, cmdId: msg.cmdId, ok: false, error: 'device offline' }));
       return;
@@ -265,47 +298,57 @@ export class Hub {
   _onClose(ws) {
     if (ws._meta.helloTimer) { clearTimeout(ws._meta.helloTimer); ws._meta.helloTimer = null; }
     if (ws._meta.graceTimer) { clearTimeout(ws._meta.graceTimer); ws._meta.graceTimer = null; }
+    const groupId = ws._meta.groupId;
     if (ws._meta.role === 'player' && ws._meta.deviceId) {
-      if (this.players.get(ws._meta.deviceId) === ws) this.players.delete(ws._meta.deviceId);
-      this._broadcastDevices();
+      const k = groupKey(groupId, ws._meta.deviceId);
+      if (this.players.get(k) === ws) this.players.delete(k);
+      this._broadcastDevices(groupId);
     } else if (ws._meta.role === 'controller') {
-      this.controllers.delete(ws);
+      const set = this.controllers.get(groupId);
+      if (set) { set.delete(ws); if (!set.size) this.controllers.delete(groupId); }
     }
   }
 
   // ---- broadcasts / snapshots ----
 
-  _pushSnapshot(deviceId) {
-    const player = this.players.get(deviceId);
+  _pushSnapshot(groupId, deviceId) {
+    const player = this.players.get(groupKey(groupId, deviceId));
     if (!player) return;
-    const desired = this.state.getDesired(deviceId);
+    const desired = this.state.getDesired(groupId, deviceId);
     this._send(player, makeSnapshot({ deviceId, desired, serverEpochMs: Date.now() }));
   }
 
-  _deviceList() {
-    return this.store.list().map((d) =>
-      this.state.view(d.deviceId, { online: this.players.has(d.deviceId) })
+  _deviceList(groupId) {
+    return this.store.list(groupId).map((d) =>
+      this.state.view(groupId, d.deviceId, { online: this.players.has(groupKey(groupId, d.deviceId)) })
     );
   }
 
-  _broadcastDevices() {
-    const payload = makeDevices({ devices: this._deviceList() });
-    for (const c of this.controllers) this._send(c, payload);
+  _broadcastDevices(groupId) {
+    const set = this.controllers.get(groupId);
+    if (!set || !set.size) return;
+    const payload = makeDevices({ devices: this._deviceList(groupId) });
+    for (const c of set) this._send(c, payload);
   }
 
-  _broadcastToControllers(msg) {
-    for (const c of this.controllers) this._send(c, msg);
+  _broadcastToControllers(groupId, msg) {
+    const set = this.controllers.get(groupId);
+    if (!set) return;
+    for (const c of set) this._send(c, msg);
   }
 
-  // Tell every client (players + controllers) the sound library changed → refetch /api/library.
-  broadcastLibrary() {
+  // Tell every client in a group (players + controllers) the sound library changed → refetch
+  // /api/library. Scoped: another family's library change never wakes this group.
+  broadcastLibrary(groupId) {
     const m = { t: MSG.LIBRARY };
-    for (const c of this.controllers) this._send(c, m);
-    for (const p of this.players.values()) this._send(p, m);
+    const set = this.controllers.get(groupId);
+    if (set) for (const c of set) this._send(c, m);
+    for (const p of this.players.values()) if (p._meta.groupId === groupId) this._send(p, m);
   }
 
   _heartbeatTick() {
-    const all = [...this.players.values(), ...this.controllers];
+    const all = [...this.players.values()];
+    for (const set of this.controllers.values()) for (const c of set) all.push(c);
     for (const ws of all) {
       if (ws._meta.alive === false) {
         // Backstop: still no pong a full interval after the last ping -> reap (fires close ->
@@ -333,25 +376,28 @@ export class Hub {
     }
   }
 
-  // Health snapshot for /api/health: total registered vs currently-connected players. (finding #19)
+  // Health snapshot for /api/health: total registered vs currently-connected players, plus the
+  // number of distinct groups holding devices. (finding #19)
   healthCounts() {
-    const total = this.store.list().length;
+    const total = this.store.listAll().length;
     const online = this.players.size;
-    return { total, online, offline: Math.max(0, total - online) };
+    return { total, online, offline: Math.max(0, total - online), groups: this.store.groupCount() };
   }
 
   // Drop a device registration entirely (parent tapped "Forget", or an admin prune). Clears its
-  // sleep-timer, closes any live socket, and tells controllers. (finding #3)
-  forgetDevice(deviceId) {
-    if (!this.store.get(deviceId)) return false;
-    this.state.forget(deviceId);
-    this.store.removeDevice(deviceId);
-    const sock = this.players.get(deviceId);
+  // sleep-timer, closes any live socket, and tells controllers. Group-scoped so a family can only
+  // forget its own devices. (finding #3)
+  forgetDevice(groupId, deviceId) {
+    if (!this.store.get(groupId, deviceId)) return false;
+    this.state.forget(groupId, deviceId);
+    this.store.removeDevice(groupId, deviceId);
+    const k = groupKey(groupId, deviceId);
+    const sock = this.players.get(k);
     if (sock) {
-      this.players.delete(deviceId);
+      this.players.delete(k);
       try { sock.terminate(); } catch (err) { console.error('[ws] forget terminate failed:', err.message); }
     }
-    this._broadcastDevices();
+    this._broadcastDevices(groupId);
     return true;
   }
 }

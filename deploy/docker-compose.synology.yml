@@ -30,6 +30,9 @@ services:
       # For a trusted home LAN you may instead set MP_ALLOW_OPEN=1 and omit the token.
       - MP_TOKEN=${MP_TOKEN:-}
       - MP_ALLOW_OPEN=${MP_ALLOW_OPEN:-}
+      # Multi-family: set to 1 to share this NAS hub across households — each family uses its own token
+      # and gets a fully isolated group (rooms, controls, uploads). MP_TOKEN is then optional. See docs/DEPLOY.md.
+      - MP_MULTIGROUP=${MP_MULTIGROUP:-}
       # Origin allowlist. Usually NOT needed: the hub already accepts same-origin requests (Origin
       # host == the Host you connect to), so http://<nas-ip>:8080 and a Host-preserving reverse proxy
       # work out of the box. Set this only if a proxy REWRITES the Host header, e.g.:
