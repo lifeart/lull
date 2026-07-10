@@ -105,6 +105,15 @@ test('MODERN tier: volume slider drives SET_GAIN with no error', async ({ browse
   });
   await expect(card).toContainText('50%');
   await expect(card.locator('.statechip')).toContainText('playing'); // still playing, SET_GAIN didn't break it
+
+  // Volume now reaches 100% (cap raised from 60% to full scale).
+  await expect(slider).toHaveAttribute('max', '1');
+  await slider.evaluate((el) => {
+    el.value = '1';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect(card).toContainText('100%');
   await ctx.close();
 });
 
@@ -722,6 +731,23 @@ test('Bedtime scene: one tap starts every online room (P2)', async ({ browser })
   await expect(b.locator('#stateLine')).toContainText('Playing', { timeout: 10000 });
   await expect(c.locator('#preflightResult')).toContainText(/Started/i, { timeout: 10000 });
   await ctxA.close(); await ctxB.close(); await ctxC.close();
+});
+
+test('local player remembers the last selected sound across a reload', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const sounds = c.locator('#localPlayer .local-sounds');
+  const brown = sounds.getByRole('button', { name: 'Brown noise' });
+  await expect(brown).toBeVisible({ timeout: 10000 });
+  // Pick a non-default sound (default is pink), then reload the controller.
+  await brown.click();
+  await expect(brown).toHaveAttribute('aria-pressed', 'true');
+  await c.reload();
+  // The choice persists (localStorage) instead of snapping back to the default.
+  await expect(c.locator('#localPlayer .local-sounds').getByRole('button', { name: 'Brown noise' }))
+    .toHaveAttribute('aria-pressed', 'true', { timeout: 10000 });
+  await ctx.close();
 });
 
 test('loader: "Play here" shows a spinner until the sound is ready (not-instant start ≠ broken)', async ({ browser }) => {

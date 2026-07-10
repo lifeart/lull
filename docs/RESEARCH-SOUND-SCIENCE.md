@@ -56,13 +56,13 @@
 | Setting | Recommendation | Basis |
 |---|---|---|
 | **Default sound** | **Pink noise** (broad masking + gentle tilt), with **Womb** surfaced for 0–3 mo, **Brown/Fan** for a warmer low option | Spencer settles on broadband; pink covers speech band (§3) yet less harsh than white; womb defensible only for newborns |
-| **Default volume** | **GAIN_DEFAULT 0.3** — keep it. Soft-cap 0.6 — keep it. | See below — both appropriately conservative on the *digital* side |
+| **Default volume** | **GAIN_DEFAULT 0.3** — keep the low default. Slider cap raised to **1.0 (100%)** by product choice; the conservative lever is the default + guidance, not the ceiling. | See below — the *default* is conservative on the *digital* side; the app can't enforce a dBA ceiling regardless of the cap |
 | **Sleep timer** | Default **ON**, ~**30–45 min fade-out**, not continuous all-night | Hugh: "short duration… until the infant is sleeping"; the 85 dBA/8 h risk is *level × duration* compounding |
 | **Placement copy** | *"Place the phone across the room (≥2 m), never in or on the crib. Distance alone is not enough — keep the volume low."* | Hugh verbatim recommendation; 2 m insufficient by itself |
 | **Low-volume warning** | Show a **calibration note + optional phone-SPL-meter prompt**: "Aim for ≤50 dBA at the crib. This app cannot measure real loudness — it depends on your device and volume." | AAP: app cannot guarantee dBA; measure at the listening position |
 
-### 2c. Are GAIN_DEFAULT 0.3 / cap 0.6 conservative enough?
-**Yes, on the digital side — but honestly qualify it.** 0.3 gain is ~−10.5 dBFS of trim below the baked file, and 0.6 is a further ~−4.4 dBFS soft cap. That is genuinely conservative *within the signal chain*. **But digital gain does not equal acoustic dBA** — real SPL depends on the phone's hardware volume, speaker, and distance. The correct honest posture: keep 0.3/0.6, **and** surface the distance + volume + meter guidance, because the app cannot enforce a dBA ceiling. Do not claim "safe" from the gain value alone.
+### 2c. Is the default (GAIN_DEFAULT 0.3) conservative enough?
+**Yes, on the digital side — but honestly qualify it.** 0.3 gain is ~−10.5 dBFS of trim below the baked file. That is genuinely conservative *within the signal chain*. **But digital gain does not equal acoustic dBA** — real SPL depends on the phone's hardware volume, speaker, and distance. **The slider cap was raised to 1.0 (100%) by product choice**, so the safety mechanism is the low *default* plus the distance/volume/meter guidance, NOT the ceiling — the app cannot enforce a dBA ceiling regardless. Do not claim "safe" from the gain value alone.
 
 ---
 
@@ -160,7 +160,7 @@ Current `seamlessLoop` **peak-normalizes every texture to AMP=0.6**. Textures ha
 
 ## 6. Prioritized action list for bake.js
 
-**Recommended default nursery sound: Pink noise** (broadband settling per Spencer; masks the speech band; less harsh than white). Surface **Womb** prominently for 0–3 months. **Recommended default volume: keep GAIN_DEFAULT 0.3 / soft-cap 0.6**, paired with distance + duration + meter guidance.
+**Recommended default nursery sound: Pink noise** (broadband settling per Spencer; masks the speech band; less harsh than white). Surface **Womb** prominently for 0–3 months. **Recommended default volume: keep the low GAIN_DEFAULT 0.3** (the slider cap is 1.0 / 100% by product choice), paired with distance + duration + meter guidance.
 
 Highest-impact first — each a small, specific coding task:
 

@@ -241,7 +241,7 @@ text). Findings: all 14 machines exceeded 50 dBA at 30 cm; **3 exceeded 85 dBA**
 **turn it off once the baby is asleep**.
 
 Bake into the product:
-1. **Low default, never max** — keep `GAIN_DEFAULT = 0.3` / `GAIN_SOFT_CAP = 0.6`; do not raise the cap.
+1. **Low *default*, full *range*** — keep the conservative `GAIN_DEFAULT = 0.3`. The slider ceiling `GAIN_SOFT_CAP` was raised to `1.0` (100%) by product choice; the research recommendation is still to keep the level low (louder isn't safer, and digital gain ≠ dBA), which the on-screen guidance below reinforces since the app can't enforce a real SPL ceiling.
 2. **On-screen placement warning** (controller + player): "Place the device ≥ 2 ft (60 cm) from the crib
    and keep the volume low."
 3. **Honest SPL disclaimer** — digital gain is not a decibel meter; start low.

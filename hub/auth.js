@@ -58,12 +58,18 @@ export function hashGroup(token) {
 // membership is decided, and it depends only on the (authenticated) token — never on client-
 // supplied data — so a client can only ever act inside the group its token grants.
 //   multiGroup  : TOFU mode — any non-empty token is its own group.
-//   token       : the legacy single shared secret (MP_TOKEN); only consulted when !multiGroup.
+//   token       : the configured MP_TOKEN. In single-group mode it's the access gate; in multi-group
+//                 mode it's ALSO honored — a client presenting exactly this token stays on the shared
+//                 DEFAULT_GROUP, so an existing single-token deployment keeps its devices + uploads
+//                 when the flag is flipped on. Every other token is its own isolated group.
 //   allowTokenless: may a tokenless client join the shared DEFAULT_GROUP? (loopback / MP_ALLOW_OPEN)
 // Returns { ok:true, groupId } or { ok:false, code, reason }.
 export function resolveGroup(url, { multiGroup = false, token = '', allowTokenless = false } = {}) {
   if (multiGroup) {
     const t = tokenFromUrl(url);
+    // Migration continuity: the configured MP_TOKEN keeps mapping to DEFAULT_GROUP (constant-time
+    // compare) so its devices + uploads carry over. A brand-new/different token → its own group.
+    if (token && tokenMatches(url, token)) return { ok: true, groupId: DEFAULT_GROUP };
     if (t) return { ok: true, groupId: hashGroup(t) };
     if (allowTokenless) return { ok: true, groupId: DEFAULT_GROUP };
     return { ok: false, code: 401, reason: 'token required' };
