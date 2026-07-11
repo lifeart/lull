@@ -403,7 +403,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 
 /* Full-screen tap-to-resume — deliberately dim (a lit screen in a dark nursery is a bug),
  * but still ≥4.5:1 on black. */
-.overlay { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 50; display: none; align-items: center; justify-content: center; text-align: center; padding: 40px; background: #000; color: rgba(235, 235, 245, 0.5); cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+.overlay { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 60; display: none; align-items: center; justify-content: center; text-align: center; padding: 40px; background: #000; color: rgba(235, 235, 245, 0.5); cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
 .overlay.show { display: flex; }
 .overlay .big { font-size: 1.2rem; }
 .overlay:focus-visible { outline: 2px solid rgba(235, 235, 245, 0.4); outline-offset: -8px; }
