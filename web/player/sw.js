@@ -11,7 +11,10 @@
 //     the full file) from the cached copy, so a modern browser on a plane can still start playback.
 // Old iOS never issues the `fetch()` load and is always online at home, so its behaviour is unchanged.
 
-const SHELL = 'mp-player-shell-v6'; // bump → drops the stale-cached shell (old JS) on activate
+// Version is AUTO-INJECTED by the hub (hub/server.js replaces __SHELL_VER__ with a content hash of
+// web/ + shared/), so any change to app JS/CSS/HTML mints a new SW → clients re-cache automatically,
+// no manual bump. If served raw (e.g. a static host with no injection), the literal is a stable name.
+const SHELL = 'mp-player-shell-__SHELL_VER__';
 const SHELL_PREFIX = 'mp-player-shell-'; // only touch THIS app's shell caches on cleanup
 const AUDIO = 'mp-audio-v1'; // shared with /controller (per-origin); bump to refresh sounds after a re-bake
 const AUDIO_PREFIX = 'mp-audio-';

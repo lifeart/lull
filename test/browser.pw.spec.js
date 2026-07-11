@@ -939,3 +939,22 @@ test('dim keeps audio ACTUALLY running (AudioContext stays "running" while the s
   expect(await state()).toBe('running');
   await ctx.close();
 });
+
+test('service worker version is auto-injected as a content hash (no manual bump)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const sw = await c.evaluate(async () => ({
+    controller: await (await fetch('/controller/sw.js')).text(),
+    player: await (await fetch('/player/sw.js')).text(),
+  }));
+  // The literal marker must have been replaced by the hub with a real hash.
+  expect(sw.controller).not.toContain('__SHELL_VER__');
+  expect(sw.player).not.toContain('__SHELL_VER__');
+  const cm = sw.controller.match(/mp-controller-shell-([a-f0-9]{12})/);
+  const pm = sw.player.match(/mp-player-shell-([a-f0-9]{12})/);
+  expect(cm).toBeTruthy();
+  expect(pm).toBeTruthy();
+  expect(cm[1]).toBe(pm[1]); // same content hash of web/ + shared/ across both SWs
+  await ctx.close();
+});

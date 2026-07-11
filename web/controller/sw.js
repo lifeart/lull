@@ -6,7 +6,10 @@
 // cache-first; leave the <audio> element on the native network path while online (old-iOS-safe) and
 // only synthesize its response from cache when offline. See web/player/sw.js for the full rationale.
 
-const SHELL = 'mp-controller-shell-v6'; // bump → drops the stale-cached shell (old JS) on activate
+// Version is AUTO-INJECTED by the hub (hub/server.js replaces __SHELL_VER__ with a content hash of
+// web/ + shared/), so any change to app JS/CSS/HTML mints a new SW → clients re-cache automatically,
+// no manual bump. If served raw (e.g. a static host with no injection), the literal is a stable name.
+const SHELL = 'mp-controller-shell-__SHELL_VER__';
 const SHELL_PREFIX = 'mp-controller-shell-'; // only touch THIS app's shell caches on cleanup
 const AUDIO = 'mp-audio-v1'; // shared with /player (per-origin); bump to refresh sounds after a re-bake
 const AUDIO_PREFIX = 'mp-audio-';

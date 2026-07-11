@@ -7,7 +7,8 @@
 
 import http from 'node:http';
 import path from 'node:path';
-import { readFileSync, createWriteStream } from 'node:fs';
+import crypto from 'node:crypto';
+import { readFileSync, createWriteStream, readdirSync, statSync } from 'node:fs';
 import { rm, access, mkdir } from 'node:fs/promises';
 import { constants as FS } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -25,6 +26,38 @@ let uploadsInFlight = 0;
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_DIR = path.join(REPO_ROOT, 'web');
+const SHARED_DIR = path.join(REPO_ROOT, 'shared');
+
+// Auto-versioned service workers: a content hash of every browser-served source file (web/ + shared/,
+// minus baked assets). ANY edit to app JS/CSS/HTML/manifest changes the hash → the hub serves a new
+// sw.js → browsers detect the byte change, install the new SW, and re-cache the shell. No manual
+// version bump, no build step. Computed fresh per sw.js request (infrequent; a handful of small files).
+function shellVersion() {
+  const h = crypto.createHash('sha256');
+  const walk = (dir) => {
+    let names;
+    try { names = readdirSync(dir).sort(); } catch { return; }
+    for (const name of names) {
+      if (name === 'assets') continue; // skip baked WAVs / large binaries — they don't gate the shell
+      const p = path.join(dir, name);
+      const st = statSync(p);
+      if (st.isDirectory()) walk(p);
+      else if (/\.(js|css|html|webmanifest)$/.test(name)) { h.update(name); h.update(readFileSync(p)); }
+    }
+  };
+  walk(WEB_DIR); walk(SHARED_DIR);
+  return h.digest('hex').slice(0, 12);
+}
+// Serve a service worker with __SHELL_VER__ replaced by the current content hash.
+function serveServiceWorker(res, urlPath) {
+  const abs = path.join(WEB_DIR, urlPath.replace(/^\//, '')); // /player/sw.js → web/player/sw.js
+  if (abs !== path.join(WEB_DIR, 'player', 'sw.js') && abs !== path.join(WEB_DIR, 'controller', 'sw.js')) {
+    res.writeHead(404).end('not found'); return;
+  }
+  const src = readFileSync(abs, 'utf8').replace(/__SHELL_VER__/g, shellVersion());
+  res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache' });
+  res.end(src);
+}
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
 const STATE_FILE = process.env.STATE_FILE || path.join(REPO_ROOT, 'data', 'state.json');
@@ -257,6 +290,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/upload/delete' && req.method === 'POST') { await handleDelete(req, res); return; }
     if (p === '/api/device/forget' && req.method === 'POST') { await handleForget(req, res); return; }
     if (p === '/api/upload' && req.method === 'POST') { await handleUpload(req, res); return; }
+    if (p === '/player/sw.js' || p === '/controller/sw.js') { serveServiceWorker(res, p); return; }
     if (p.startsWith('/uploads/')) {
       const ok = await serveFileWithin(req, res, UPLOADS_DIR, p.slice('/uploads'.length));
       if (!ok) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); }
