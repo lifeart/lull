@@ -237,6 +237,19 @@ async function resumeFromGesture() {
 function showOverlay(text) { $('overlay').classList.add('show'); $('overlayText').textContent = text; }
 function hideOverlay() { $('overlay').classList.remove('show'); }
 
+// "Dim screen": black out the display (audio keeps playing underneath) with a faint alive indicator —
+// no light in the nursery, less OLED power, device stays awake/reachable. Tap anywhere to restore.
+const dimShown = () => { const d = $('dimOverlay'); return !!d && d.classList.contains('show'); };
+function updateDimText() {
+  const el = $('dimText'); if (!el) return;
+  const st = engine ? engine.getState() : null;
+  const label = st === STATES.PLAYING ? 'playing' : st === STATES.STOPPED ? 'silent'
+    : st === STATES.REQUIRES_GESTURE ? 'needs a tap' : st === STATES.ERROR ? 'audio error' : 'armed';
+  el.textContent = `${friendlyName || 'Speaker'} · ${label}`;
+}
+function showDim() { updateDimText(); $('dimOverlay').classList.add('show'); }
+function hideDim() { $('dimOverlay').classList.remove('show'); }
+
 // --- recovery hooks ---
 function wireRecovery() {
   const recover = async () => {
@@ -278,6 +291,7 @@ function render() {
   $('timerLine').textContent = rem != null ? `Sleep timer: ${Math.floor(rem / 60)}:${String(rem % 60).padStart(2, '0')}` : '';
   $('capsLine').innerHTML = icon('lock') + ' ' + esc(lockSummary(tier));
   renderMonitor();
+  if (dimShown()) updateDimText(); // keep the faint dimmed-screen indicator current
   if (st === STATES.REQUIRES_GESTURE) showOverlay('Tap anywhere to resume the sound');
 }
 
@@ -386,6 +400,9 @@ function buildHardening() {
   // library fetch or a later failure can't leave a button dead ("Arm/Start does nothing"). (finding: silent errors)
   $('armBtn').addEventListener('click', armFromGesture);
   $('monitorToggle').addEventListener('click', toggleMonitor);
+  $('dimBtn').addEventListener('click', showDim);
+  $('dimOverlay').addEventListener('click', hideDim);
+  $('dimOverlay').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') hideDim(); });
   $('overlay').addEventListener('click', resumeFromGesture);
   $('overlay').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') resumeFromGesture(); });
   hydrateIcons(); // swap [data-icon] placeholders (arm button, safety note) for inline SVG

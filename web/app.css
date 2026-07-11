@@ -408,6 +408,17 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--ring
 .overlay .big { font-size: 1.2rem; }
 .overlay:focus-visible { outline: 2px solid rgba(235, 235, 245, 0.4); outline-offset: -8px; }
 
+/* "Dim" — a full-black screen overlay (OLED = no light, less power) that keeps audio playing
+ * underneath. Minor feedback: a faint breathing dot + one line so a glance confirms it's alive;
+ * tap anywhere to restore brightness. Sits above everything but below a hard-failure overlay. */
+.dim { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 55; display: none; align-items: center; justify-content: center; text-align: center; padding: var(--s6); background: #000; cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+.dim.show { display: flex; }
+.dim-feedback { display: inline-flex; align-items: center; gap: var(--s2); color: rgba(235, 235, 245, 0.2); font-size: 0.9375rem; letter-spacing: 0.02em; max-width: 90%; }
+.dim-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: dim-breathe 3.6s ease-in-out infinite; }
+@keyframes dim-breathe { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+.dim:focus-visible { outline: 2px solid rgba(235, 235, 245, 0.25); outline-offset: -8px; }
+@media (prefers-reduced-motion: reduce) { .dim-dot { animation: none; opacity: 0.6; } }
+
 /* Empty state — centered guidance, placeholder outline instead of a bare paragraph */
 #empty { text-align: center; padding: var(--s6) var(--s4); border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); }
 
