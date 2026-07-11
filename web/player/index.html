@@ -51,8 +51,9 @@
         <div id="soundLine" class="muted"></div>
         <div id="timerLine" class="countdown muted"></div>
         <div id="capsLine" class="faint" style="margin-top:10px"></div>
-        <button id="monitorToggle" class="btn btn-ghost block" style="margin-top:14px" hidden></button>
-        <p id="monitorNote" class="faint" style="margin-top:8px" hidden>Sends this room's sound level to your phone. Needs the screen on — capture stops when the device locks.</p>
+        <button id="dimBtn" class="btn btn-ghost block" style="margin-top:var(--s4)" data-icon="moon">Dim screen</button>
+        <button id="monitorToggle" class="btn btn-ghost block" style="margin-top:var(--s2)" hidden></button>
+        <p id="monitorNote" class="faint" style="margin-top:var(--s2)" hidden>Sends this room's sound level to your phone. Needs the screen on — capture stops when the device locks.</p>
       </div>
       <p class="faint" style="margin-top:16px">This tab must stay open. Plug in power, lower brightness, and lock the screen.</p>
     </section>
@@ -60,6 +61,11 @@
 
   <div id="overlay" class="overlay" role="button" tabindex="0" aria-label="Tap to resume the sound">
     <div id="overlayText" class="big">Tap anywhere to resume the sound</div>
+  </div>
+
+  <!-- Screen dimmed to black (audio keeps playing); a faint breathing dot + line confirm it's alive. -->
+  <div id="dimOverlay" class="dim" role="button" tabindex="0" aria-label="Screen dimmed — tap to restore brightness">
+    <span class="dim-feedback"><span class="dim-dot"></span><span id="dimText"></span></span>
   </div>
 
   <!-- Classic script FIRST: installs the on-screen error bar so a module parse/eval error (or any

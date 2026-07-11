@@ -375,6 +375,7 @@ function render() {
   }
   for (const [id, card] of cards) if (!seen.has(id)) { card.el.remove(); cards.delete(id); }
   applyExpansion(); // card.update() resets el.className each tick — re-assert the collapsed state
+  if (dimShown()) updateDimText(); // keep the faint dimmed-screen indicator current
 }
 
 function makeCard(deviceId, tier, caps) {
@@ -982,9 +983,23 @@ function setupAddRoom() {
   rebuild();
 }
 
+// "Dim screen": black out the display (the WS control channel keeps running) with a faint alive
+// indicator; tap to restore. A glance shows how many rooms are playing without full brightness.
+const dimShown = () => { const d = $('dimOverlay'); return !!d && d.classList.contains('show'); };
+function updateDimText() {
+  const el = $('dimText'); if (!el) return;
+  const rooms = devices.filter((d) => d.online && d.reported && d.reported.state === STATES.PLAYING).length + (localPlaying() ? 1 : 0);
+  el.textContent = rooms ? `${rooms} playing · tap to wake` : 'tap to wake';
+}
+function showDim() { updateDimText(); $('dimOverlay').classList.add('show'); }
+function hideDim() { $('dimOverlay').classList.remove('show'); }
+
 // --- boot ---
-hydrateIcons(); // swap [data-icon] placeholders (token button, bedtime button) for inline SVG
+hydrateIcons(); // swap [data-icon] placeholders (dim, token, bedtime buttons) for inline SVG
 setupAddRoom();
+$('dimBtn').addEventListener('click', showDim);
+$('dimOverlay').addEventListener('click', hideDim);
+$('dimOverlay').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') hideDim(); });
 $('bedtimeBtn').addEventListener('click', runBedtime);
 $('preflightBtn').addEventListener('click', runPreflight);
 $('alarmDismiss').addEventListener('click', clearAlarm);

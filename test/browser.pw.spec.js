@@ -859,3 +859,50 @@ test('this device: the card header keeps the same height when playback starts (t
   expect(playingH).toBe(stoppedH); // no jump — the title didn't wrap to a second line
   await ctx.close();
 });
+
+test('installed PWA declares fullscreen display in both manifests', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const m = await c.evaluate(async () => ({
+    player: await (await fetch('/player/manifest.webmanifest')).json(),
+    controller: await (await fetch('/controller/manifest.webmanifest')).json(),
+  }));
+  expect(m.player.display).toBe('fullscreen');
+  expect(m.player.display_override).toContain('fullscreen');
+  expect(m.controller.display).toBe('fullscreen');
+  await ctx.close();
+});
+
+test('dim: controller dims to black with a faint alive indicator, restores on tap', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const dim = c.locator('#dimOverlay');
+  await expect(dim).toBeHidden();
+  await c.locator('#dimBtn').click();
+  await expect(dim).toBeVisible();
+  await expect(c.locator('#dimOverlay .dim-dot')).toBeVisible(); // minor feedback: the breathing dot
+  const bg = await dim.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(bg).toBe('rgb(0, 0, 0)'); // truly black
+  await dim.click(); // tap anywhere restores
+  await expect(dim).toBeHidden();
+  await ctx.close();
+});
+
+test('dim: player dims with a faint per-room state line; tap restores', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  await p.goto('/player/');
+  await p.fill('#name', 'Nursery');
+  await p.click('#armBtn');
+  await p.locator('#status').waitFor({ state: 'visible', timeout: 10000 });
+  const dim = p.locator('#dimOverlay');
+  await expect(dim).toBeHidden();
+  await p.locator('#dimBtn').click();
+  await expect(dim).toBeVisible();
+  await expect(p.locator('#dimText')).toContainText('Nursery'); // faint alive indicator names the room + state
+  await dim.click();
+  await expect(dim).toBeHidden();
+  await ctx.close();
+});

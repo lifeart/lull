@@ -25,6 +25,7 @@
     <div class="appbar">
       <h1>Rooms</h1>
       <span class="appbar-right">
+        <button id="dimBtn" class="iconbtn" aria-label="Dim screen" title="Dim screen" data-icon="moon"></button>
         <button id="tokenBtn" class="iconbtn" aria-label="Settings" title="Settings" data-icon="gear"></button>
         <span id="hubStatus" class="hub">…</span>
       </span>
@@ -93,6 +94,11 @@
       <input id="fileInput" type="file" accept="audio/*" hidden />
     </div>
   </main>
+
+  <!-- Screen dimmed to black (control channel stays live); a faint breathing dot confirms it's alive. -->
+  <div id="dimOverlay" class="dim" role="button" tabindex="0" aria-label="Screen dimmed — tap to restore brightness">
+    <span class="dim-feedback"><span class="dim-dot"></span><span id="dimText">tap to wake</span></span>
+  </div>
 
   <!-- Classic script FIRST: on-screen error bar so a module parse/eval error is visible on old iOS. -->
   <script src="../errbar.js"></script>
