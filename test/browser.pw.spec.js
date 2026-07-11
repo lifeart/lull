@@ -906,3 +906,36 @@ test('dim: player dims with a faint per-room state line; tap restores', async ({
   await expect(dim).toBeHidden();
   await ctx.close();
 });
+
+test('dim keeps audio ACTUALLY running (AudioContext stays "running" while the screen is black)', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const c = await ctx.newPage();
+  // Instrument the real AudioContext so the test can read its live state.
+  await c.addInitScript(() => {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const Wrapped = function (...a) { const inst = new AC(...a); window.__lastAC = inst; return inst; };
+    Wrapped.prototype = AC.prototype;
+    window.AudioContext = Wrapped;
+    if (window.webkitAudioContext) window.webkitAudioContext = Wrapped;
+  });
+  await c.goto('/controller/');
+  const local = c.locator('#localPlayer');
+  await local.locator('.local-play').click();
+  await expect(local.locator('.local-eq')).toBeVisible({ timeout: 10000 }); // playing
+
+  const state = () => c.evaluate(() => (window.__lastAC ? window.__lastAC.state : 'no-ctx'));
+  expect(await state()).toBe('running'); // audio flowing before dim
+
+  await c.locator('#dimBtn').click();
+  await expect(c.locator('#dimOverlay')).toBeVisible();
+  await c.waitForTimeout(1500);
+  expect(await state()).toBe('running'); // ...and STILL flowing with the screen fully black
+
+  await c.locator('#dimOverlay').click(); // tap restores
+  await expect(c.locator('#dimOverlay')).toBeHidden();
+  await expect(local.locator('.local-eq')).toBeVisible();
+  await expect(local.locator('.local-play')).toContainText(/Pause/i);
+  expect(await state()).toBe('running');
+  await ctx.close();
+});
