@@ -46,6 +46,7 @@ export function tierControls(tier, caps) {
   return {
     tier,
     remoteVolume: modern, // GainNode gain + fades; works (best-effort) while locked
+    taper: modern, // gradual wind-down to the timer deadline; needs audio-thread fades that survive lock (MODERN)
     foregroundVolume: fg, // element.volume; screen-on only, honored off-iOS (old iOS ignores it)
     remoteStartFromSilence: modern, // start when currently silent & locked (best-effort)
     overMuteSwitch: modern, // audioSession='playback' plays over the ring switch

@@ -401,6 +401,7 @@ function makeCard(deviceId, tier, caps) {
     <div class="sec">
       <div class="row"><span class="sec-label" style="margin-bottom:0">Sleep timer</span><span class="rem countdown spacer" style="text-align:right"></span></div>
       <div class="chips timers" style="margin-top:8px"></div>
+      <div class="taper"></div>
     </div>
     <div class="sound"></div>
     <div class="vol"></div>
@@ -453,6 +454,21 @@ function makeCard(deviceId, tier, caps) {
     for (const [key, b] of refs.timerChips) b.setAttribute('aria-pressed', String(key === k));
   }
   paintTimerChips();
+
+  // Wind-down (taper): opt-in gradual fade to near-silence by the sleep-timer deadline. Shown only
+  // where remote fades survive lock (MODERN) — the state (d.desired.taper) lives in the hub, so it
+  // persists across reconnects without any controller-local storage.
+  if (controls.taper) {
+    const wrap = el.querySelector('.taper');
+    const rowt = document.createElement('label'); rowt.className = 'checkrow';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.className = 'taperbox';
+    cb.setAttribute('aria-label', 'Gradually quiet down before the timer ends');
+    cb.addEventListener('change', () => sendCommand(deviceId, { verb: VERBS.SET_TAPER, taper: cb.checked }));
+    const span = document.createElement('span'); span.innerHTML = icon('moon') + ' Gradually quiet down before the timer ends';
+    rowt.append(cb, span);
+    wrap.append(rowt, faint('Fades to near-silence by the sleep-timer time — set a timer for it to work.'));
+    refs.taperBox = cb;
+  }
 
   if (soundscapes.length > 1) {
     const sound = el.querySelector('.sound');
@@ -533,6 +549,8 @@ function makeCard(deviceId, tier, caps) {
     const active = rep.soundscape || (d.desired && d.desired.soundscape);
     for (const [id, b] of refs.soundChips) b.setAttribute('aria-pressed', String(active === id));
     paintTimerChips(); // reflect the remembered sleep-timer choice (P1)
+    // Reflect the hub-owned taper preference, but never fight a checkbox the parent is toggling.
+    if (refs.taperBox && document.activeElement !== refs.taperBox) refs.taperBox.checked = !!(d.desired && d.desired.taper);
     // Seed the slider from the DESIRED gain (what Start will use), but never fight the user.
     if (refs.slider && document.activeElement !== refs.slider && !dragging.has(deviceId)) {
       // First DEFINED of desired gain / reported gain / default. Must be != null (not ||): gain 0
@@ -796,13 +814,14 @@ function rebuildAllCards() {
 // State lives here (not in the DOM), so a library-driven rebuild never tears down playback.
 const localState = {
   engine: null, armed: false, tier: null, controls: null, refs: {}, timerKey: DEFAULT_TIMER_KEY, // default-ON 45m
-  desired: { verb: VERBS.STOP, gainLinear: GAIN_DEFAULT, soundscape: rememberedLocalSound() || SOUNDSCAPE_DEFAULT, endsAtEpochMs: null },
+  desired: { verb: VERBS.STOP, gainLinear: GAIN_DEFAULT, soundscape: rememberedLocalSound() || SOUNDSCAPE_DEFAULT, endsAtEpochMs: null, taper: false },
 };
 const localUrlFor = (id) => { const s = soundscapes.find((x) => x.id === id); return (s && s.url) || '/player/assets/pink.wav'; };
 const localPlaying = () => !!localState.engine && localState.engine.getState() === STATES.PLAYING;
 async function localRealize() {
   if (!localState.engine) return;
-  await localState.engine.applyDesired(Object.assign({}, localState.desired, { url: localUrlFor(localState.desired.soundscape) }));
+  // nowMs (local clock — this device owns its own deadline) lets the engine place the taper fade.
+  await localState.engine.applyDesired(Object.assign({}, localState.desired, { url: localUrlFor(localState.desired.soundscape), nowMs: Date.now() }));
 }
 async function localArm() {
   if (localState.engine) return true;
@@ -832,6 +851,7 @@ async function localSetTimerKey(key) { localState.timerKey = key; const f = time
 async function localStop() { localState.fading = false; localState.desired = Object.assign({}, localState.desired, { verb: VERBS.STOP, endsAtEpochMs: null }); await localRealize(); renderLocal(); }
 async function localToggle() { if (localPlaying()) await localStop(); else await localPlay(); }
 async function localSetSound(id) { localState.desired = Object.assign({}, localState.desired, { soundscape: id }); setRememberedLocalSound(id); if (localState.armed) await localRealize(); renderLocal(); }
+async function localSetTaper(on) { localState.desired = Object.assign({}, localState.desired, { taper: !!on }); if (localState.armed) await localRealize(); renderLocal(); }
 function localSetGain(g) { localState.desired = Object.assign({}, localState.desired, { gainLinear: g }); if (localState.armed) localRealize(); }
 async function localSetTimer(durationMs) {
   if (durationMs == null) { localState.desired = Object.assign({}, localState.desired, { endsAtEpochMs: null }); if (localState.armed) await localRealize(); renderLocal(); return; }
@@ -906,6 +926,20 @@ function renderLocalPlayer() {
   addT('wake', '7:00', 'moon');
   addT('off', 'off');
 
+  // Wind-down (taper): opt-in gradual fade to near-silence by the sleep-timer deadline — same as the
+  // rooms, shown only where remote fades survive lock (MODERN). `controls` is computed above.
+  if (controls.taper && r.timers) {
+    const rowt = document.createElement('label'); rowt.className = 'checkrow';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.className = 'taperbox';
+    cb.checked = !!localState.desired.taper;
+    cb.setAttribute('aria-label', 'Gradually quiet down before the timer ends');
+    cb.addEventListener('change', () => localSetTaper(cb.checked));
+    const span = document.createElement('span'); span.innerHTML = icon('moon') + ' Gradually quiet down before the timer ends';
+    rowt.append(cb, span);
+    r.timers.parentElement.append(rowt);
+    r.taperBox = cb;
+  }
+
   applyExpansion(); // the header was just rebuilt — re-assert this card's collapsed state
   renderLocal();
 }
@@ -931,6 +965,7 @@ function renderLocal() {
   const sound = localState.desired.soundscape;
   for (const [id, b] of r.soundChips) b.setAttribute('aria-pressed', String(id === sound));
   if (r.timerChips) for (const [key, b] of r.timerChips) b.setAttribute('aria-pressed', String(key === localState.timerKey));
+  if (r.taperBox && document.activeElement !== r.taperBox) r.taperBox.checked = !!localState.desired.taper;
   if (r.slider && document.activeElement !== r.slider) { r.slider.value = String(localState.desired.gainLinear); r.setFill && r.setFill(); }
   updateLocalRem();
 }

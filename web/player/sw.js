@@ -27,7 +27,7 @@ const SHELL_FILES = [
 ];
 // Pre-cache the core noise loops so they play offline from the very first visit (best-effort — a
 // missing asset in dev, or being offline during install, must not fail the shell install).
-const CORE_SOUNDS = ['/player/assets/pink.wav', '/player/assets/white.wav', '/player/assets/brown.wav'];
+const CORE_SOUNDS = ['/player/assets/pink.wav', '/player/assets/white.wav', '/player/assets/brown.wav', '/player/assets/airflow.wav'];
 
 const isAudio = (url) => url.pathname.includes('/assets/') || url.pathname.startsWith('/uploads/');
 

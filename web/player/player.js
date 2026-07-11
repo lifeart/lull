@@ -76,7 +76,9 @@ const labelFor = (id) => soundscapeLabels[id] || id;
 async function realize() {
   if (!engine) return;
   if (desired.soundscape && !soundscapeUrls[desired.soundscape]) await loadLibrary(); // uploaded track not seen yet
-  await engine.applyDesired(Object.assign({}, desired, { url: urlFor(desired.soundscape) }));
+  // nowMs is the hub-aligned clock so the engine can place the taper's decrescendo relative to the
+  // absolute endsAtEpochMs deadline (a skewed old-device clock would otherwise mis-time the fade).
+  await engine.applyDesired(Object.assign({}, desired, { url: urlFor(desired.soundscape), nowMs: hubNow() }));
   render();
 }
 

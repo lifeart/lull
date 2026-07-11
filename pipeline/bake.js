@@ -128,6 +128,25 @@ function brown(n) { // leaky integrator (−6 dB/oct)
   for (let i = 0; i < n; i++) { last = (last + 0.02 * rnd()) / 1.02; out[i] = last * 3.5; }
   return out;
 }
+// Gently shaped, stationary broadband masker — "distant airflow / soft fan" (the July-2026 research's
+// preferred primary preset, §4): steep attenuation below ~100 Hz (no wasteful sub-bass excursion), a
+// pink-ish downward tilt through the mids, and a steep roll-off above ~6 kHz so there's none of white
+// noise's harsh hiss. A <1 dB slow drift makes it read as moving air rather than dead-flat static.
+// Seamless: the drift LFO is a whole number of cycles over loopN.
+function airflow(n, loopN) {
+  const out = new Float32Array(n);
+  const pk = pink(n);                                                 // −3 dB/oct core (already gentle)
+  const tilt = biquad('highshelf', 1500, 0.7071, -4);                // a touch darker above ~1.5 kHz
+  const hp1 = biquad('hp', 100, 0.7), hp2 = biquad('hp', 110, 0.7);   // ~24 dB/oct below ~100 Hz
+  const lp1 = biquad('lp', 6000, 0.7), lp2 = biquad('lp', 6300, 0.7); // ~24 dB/oct above ~6 kHz
+  for (let i = 0; i < n; i++) {
+    const p = (i % loopN) / loopN;
+    const x = lp2(lp1(hp2(hp1(tilt(pk[i])))));
+    const drift = 0.94 + 0.06 * (0.5 - 0.5 * Math.cos(2 * Math.PI * 2 * p)); // ~0.5 dB, 2 whole cycles → seamless
+    out[i] = x * drift;
+  }
+  return out;
+}
 
 // --- procedural ambient textures (our own synthesis — no license, works fully offline) ----------
 // Periodic modulation uses (i % loopN) so whole cycles fit the loop → seamless across the wrap.
@@ -352,6 +371,8 @@ async function main() {
     { id: 'white', label: 'White noise', gen: white },
     { id: 'pink', label: 'Pink noise', gen: pink },
     { id: 'brown', label: 'Brown noise', gen: brown },
+    // Shaped broadband masker (the research's preferred primary sound). Selectable; pink stays default.
+    { id: 'airflow', label: 'Airflow', gen: airflow },
     // Procedural ambient textures (our own synthesis — no license, works fully offline).
     { id: 'rain', label: 'Rain', gen: rain, kind: 'ambient' },
     { id: 'ocean', label: 'Ocean waves', gen: ocean, kind: 'ambient' },
@@ -391,7 +412,14 @@ async function main() {
   await generateIcons();
 }
 
-main().catch((err) => {
-  console.error('[bake] failed:', err);
-  process.exit(1);
-});
+// Run the bake only when executed directly (`node pipeline/bake.js`); stay importable so tests can
+// exercise the generators without triggering a full bake + file writes.
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  main().catch((err) => {
+    console.error('[bake] failed:', err);
+    process.exit(1);
+  });
+}
+
+export { SR, white, pink, brown, airflow, seamlessLoop };

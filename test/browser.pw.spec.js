@@ -137,6 +137,52 @@ test('MID tier: per-device lock line + foreground volume slider', async ({ brows
   await ctx.close();
 });
 
+test('MODERN taper: the wind-down checkbox drives SET_TAPER and persists in the hub state', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'TaperRoom', { modern: true });
+  await expect(player.locator('#tierBadge')).toHaveText('MODERN');
+
+  const controller = await ctx.newPage();
+  await controller.goto('/controller/');
+  // Scope to the ONLINE card (ignore any offline ghosts a prior retry may have left).
+  const card = controller.locator('.card:not(.offline)', { hasText: 'TaperRoom' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
+
+  const taper = card.locator('input.taperbox');
+  await expect(taper).toBeVisible(); // MODERN is the only tier that can fade in the audio thread while locked
+  await expect(taper).not.toBeChecked();
+  await taper.check();
+  await expect(taper).toBeChecked();
+
+  // Round-trip: a FRESH controller must see taper=true — proving it persisted in the HUB's desired
+  // state (the same anti-drift guarantee as volume/soundscape), not just this tab's DOM.
+  const c2 = await ctx.newPage();
+  await c2.goto('/controller/');
+  const card2 = c2.locator('.card:not(.offline)', { hasText: 'TaperRoom' });
+  await expect(card2).toBeVisible({ timeout: 10000 });
+  await expandCard(card2);
+  await expect(card2.locator('input.taperbox')).toBeChecked({ timeout: 10000 });
+  await ctx.close();
+});
+
+test('MID hides the wind-down control (honest tier gating); Airflow is a selectable sound', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const player = await ctx.newPage();
+  await armPlayer(player, 'MidNoTaper'); // headless Chromium detects as MID (no navigator.audioSession)
+  await expect(player.locator('#tierBadge')).toHaveText('MID');
+
+  const c = await ctx.newPage();
+  await c.goto('/controller/');
+  const card = c.locator('.card:not(.offline)', { hasText: 'MidNoTaper' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
+  await expect(card.locator('input.taperbox')).toHaveCount(0); // no lock-surviving software fade → no control shown
+  await expect(card.locator('.sound')).toContainText('Airflow'); // the new shaped masker shipped in the library
+  await ctx.close();
+});
+
 test('sleep timer: hub-owned deadline stops the player on-device', async ({ browser }) => {
   const ctx = await browser.newContext();
   const player = await ctx.newPage();

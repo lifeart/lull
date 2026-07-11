@@ -20,7 +20,7 @@ const SHELL_FILES = [
   './', './index.html', './controller.js', './alarm.js', './manifest.webmanifest',
   '/errbar.js', '/player/audio.js', '/app.css', '/icons.js', '/shared/protocol.js', '/shared/tiers.js',
 ];
-const CORE_SOUNDS = ['/player/assets/pink.wav', '/player/assets/white.wav', '/player/assets/brown.wav'];
+const CORE_SOUNDS = ['/player/assets/pink.wav', '/player/assets/white.wav', '/player/assets/brown.wav', '/player/assets/airflow.wav'];
 
 const isAudio = (url) => url.pathname.includes('/assets/') || url.pathname.startsWith('/uploads/');
 
