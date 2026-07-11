@@ -161,6 +161,33 @@ test('validateCommand accepts numeric-string durationMs (hub coerces) and numeri
   assert.equal(validateCommand({ verb: VERBS.SET_TIMER, target: 'd', durationMs: 'nope' }).ok, false);
 });
 
+test('taper: default OFF, SET_TAPER round-trips, and other verbs preserve the preference', () => {
+  const base = defaultDesired();
+  assert.equal(base.taper, false, 'wind-down is OFF by default (opt-in)');
+  let d = applyCommandToDesired(base, { verb: VERBS.SET_TAPER, taper: true });
+  assert.equal(d.taper, true, 'SET_TAPER turns it on');
+  // A subsequent START / SET_GAIN / SET_TIMER must keep the remembered taper preference.
+  d = applyCommandToDesired(d, { verb: VERBS.START });
+  assert.equal(d.taper, true, 'START preserves taper');
+  d = applyCommandToDesired(d, { verb: VERBS.SET_GAIN, gainLinear: 0.4 });
+  assert.equal(d.taper, true, 'SET_GAIN preserves taper');
+  d = applyCommandToDesired(d, { verb: VERBS.SET_TAPER, taper: false });
+  assert.equal(d.taper, false, 'SET_TAPER can turn it back off');
+  // Coercion: a missing/odd taper value is treated as false, never throws.
+  assert.equal(applyCommandToDesired(base, { verb: VERBS.SET_TAPER }).taper, false);
+});
+
+test('taper: validateCommand accepts SET_TAPER; makeCommand carries the flag; tierControls gates it to MODERN', () => {
+  assert.equal(validateCommand({ verb: VERBS.SET_TAPER, target: 'd', taper: true }).ok, true);
+  const cmd = makeCommand({ target: 'd', verb: VERBS.SET_TAPER, taper: true });
+  assert.equal(cmd.taper, true, 'makeCommand includes taper when provided');
+  assert.equal('taper' in makeCommand({ target: 'd', verb: VERBS.STOP }), false, 'omitted when not provided');
+  // Only MODERN can fade in the audio thread while locked, so only MODERN offers the control.
+  assert.equal(tierControls(TIERS.MODERN).taper, true);
+  assert.equal(tierControls(TIERS.MID, { elementVolume: true }).taper, false);
+  assert.equal(tierControls(TIERS.LEGACY).taper, false);
+});
+
 test('reduceCommand returns updated desired + matching ACK on success, and ok:false ACK on bad verb', () => {
   const ok = reduceCommand(defaultDesired(), { verb: VERBS.START, cmdId: 'c1' }, 'dev1');
   assert.equal(ok.ok, true);

@@ -29,6 +29,14 @@ import { STATES, TIERS, VERBS, usesGain, foregroundVolume, clampGain } from '../
 // element has no software volume, so it starts at its fixed level.
 const PLAYBACK_FADE_IN_SEC = 3;
 
+// Opt-in wind-down (SET_TAPER): hold the chosen level for a short while, then GRADUALLY ramp to
+// near-silence, arriving at the sleep-timer deadline — the room gets quieter as the child settles.
+// Scheduled as one AudioParam automation (see _scheduleTaper): the multi-minute ramp runs in the
+// native render thread, so it advances through a locked screen with no JS timer (like the gapless
+// loop). Only the real-GainNode path (MODERN) can do this; LEGACY/MID fall back to a plain stop.
+const TAPER_HOLD_MAX_SEC = 8 * 60; // full level for at most the first ~8 min ("decrease after 5–10 min")
+const TAPER_HOLD_FRAC = 0.33;      // …or a third of the session, whichever is shorter (keeps short timers sane)
+
 export class AudioEngine {
   constructor({ tier, caps, onState, onLoading }) {
     this.tier = tier;
@@ -123,7 +131,12 @@ export class AudioEngine {
       });
       this.gain = this.ctx.createGain();
       this.gain.gain.value = 0; // start silent; applyDesired ramps up
-      this.gain.connect(this.ctx.destination);
+      // Last-resort brickwall limiter on the audible bus. The baked loops are already peak-limited
+      // and play well below the threshold (so it's transparent for them), but an UPLOADED track is
+      // unnormalized and could clip or spike the room — this catches that. (research §5 safety limiter)
+      this.limiter = this._makeLimiter();
+      if (this.limiter) this.gain.connect(this.limiter).connect(this.ctx.destination);
+      else this.gain.connect(this.ctx.destination);
       this._elSrc = this.ctx.createMediaElementSource(el);
       if (this.useBuffer) {
         // Element is a MUTED keep-alive (liveness + iOS interruption signal); the audible sound is
@@ -191,9 +204,17 @@ export class AudioEngine {
       if (on && this.useBuffer && !this._bufSrc) this._startBuffer(); // (re)start a dropped gapless loop
       const softVolume = usesGain(this.tier) || this.fgVolume;
       const target = on ? (softVolume ? g : 1) : 0;
+      const fromSilence = !(this.currentGain > 0);
+      // Opt-in wind-down: only on the remote-gain (MODERN) path, where the automation runs in the
+      // audio thread and survives lock. Needs an absolute deadline (endsAtEpochMs) plus a hub-aligned
+      // now (nowMs), both supplied by the caller's realize(). Re-running applyDesired (reconnect,
+      // volume nudge) just recomputes the remaining time and re-schedules — self-healing.
+      const taperActive = on && !!desired.taper && usesGain(this.tier)
+        && typeof desired.endsAtEpochMs === 'number' && typeof desired.nowMs === 'number';
       // Starting from silence → gentle 3s fade-in (a raised-cosine swell). A volume nudge while
       // already sounding, or a stop, uses the quick click-free ramp so it stays responsive.
-      if (on && !(this.currentGain > 0)) this._fadeInGain(target, PLAYBACK_FADE_IN_SEC);
+      if (taperActive) this._scheduleTaper(target, desired.endsAtEpochMs - desired.nowMs, fromSilence);
+      else if (on && fromSilence) this._fadeInGain(target, PLAYBACK_FADE_IN_SEC);
       else this._rampGain(target);
       this.currentGain = softVolume ? (on ? g : 0) : (on ? 1 : 0);
       if (on) {
@@ -252,6 +273,54 @@ export class AudioEngine {
     if (p.setValueAtTime) p.setValueAtTime(0.0001, now); // start at silence so there's no onset step
     if (typeof p.linearRampToValueAtTime === 'function') { p.linearRampToValueAtTime(t, now + seconds); return; }
     if (typeof p.setTargetAtTime === 'function') { p.setTargetAtTime(t, now, seconds / 3); if (p.setValueAtTime) p.setValueAtTime(target, now + seconds); }
+  }
+
+  // Schedule the opt-in wind-down as ONE AudioParam automation on the gain bus:
+  //   (optional shock-free swell to `target`) → HOLD `target` for the first few minutes →
+  //   linear ramp to near-silence, landing exactly at the sleep-timer deadline.
+  // Every event lives in the native render thread, so the multi-minute decrescendo keeps advancing
+  // even while the screen is locked and the JS main thread is frozen (same principle as the gapless
+  // loop) — no setTimeout, no per-tick re-evaluation. The hub's STOP at the deadline makes the final
+  // cut, by which point gain is already ~0, so it's inaudible.
+  _scheduleTaper(target, remainMs, fromSilence) {
+    if (!this.gain || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const p = this.gain.gain;
+    const remainSec = Math.max(0, remainMs / 1000);
+    const t = Math.max(0.0001, target);
+    if (p.cancelScheduledValues) p.cancelScheduledValues(now);
+    if (remainSec < 1) { this._rampGain(0); return; } // deadline is upon us — just fall to silence
+    // 1) settle at the chosen level: a gentle swell from silence on a fresh start, else a quick
+    //    click-free catch-up (e.g. a mid-session volume change re-scheduling the taper from here).
+    let settleEnd = now;
+    if (p.setValueAtTime) p.setValueAtTime(fromSilence ? 0.0001 : Math.max(0.0001, p.value), now);
+    if (typeof p.linearRampToValueAtTime === 'function') {
+      const settle = fromSilence ? Math.min(PLAYBACK_FADE_IN_SEC, remainSec * 0.2) : Math.min(1.2, remainSec * 0.1);
+      p.linearRampToValueAtTime(t, now + settle);
+      settleEnd = now + settle;
+    } else if (p.setValueAtTime) { p.setValueAtTime(t, now); }
+    // 2) hold the level so the room stays covered for the first few minutes ("decrease after 5–10 min").
+    const holdEnd = Math.max(settleEnd, now + Math.min(TAPER_HOLD_MAX_SEC, remainSec * TAPER_HOLD_FRAC));
+    if (p.setValueAtTime) p.setValueAtTime(t, holdEnd);
+    // 3) gradual decrescendo to near-silence, arriving at the deadline.
+    const end = now + remainSec;
+    if (end > holdEnd && typeof p.linearRampToValueAtTime === 'function') p.linearRampToValueAtTime(0.0001, end);
+    else if (p.setValueAtTime) p.setValueAtTime(0.0001, Math.max(end, holdEnd));
+  }
+
+  // Build the safety limiter (a near-brickwall compressor just below full scale). Returns null where
+  // DynamicsCompressor is unavailable (very old WebKit) — the graph then connects gain→destination.
+  _makeLimiter() {
+    if (!this.ctx || typeof this.ctx.createDynamicsCompressor !== 'function') return null;
+    try {
+      const c = this.ctx.createDynamicsCompressor();
+      if (c.threshold) c.threshold.value = -1.5; // catch only near-clipping peaks; steady low-level noise is untouched
+      if (c.knee) c.knee.value = 0;
+      if (c.ratio) c.ratio.value = 20;
+      if (c.attack) c.attack.value = 0.003;
+      if (c.release) c.release.value = 0.25;
+      return c;
+    } catch (e) { console.warn('limiter unavailable', e); return null; }
   }
 
   // Gentle sleep-timer wind-down: ramp to silence over `seconds`, then stop. Only foreground/gain

@@ -93,6 +93,28 @@ test('start-from-silence fades in over ~3s; a volume nudge while playing does NO
   assert.equal(eng.getGain(), 0.5);
 });
 
+test('MODERN taper: fades in, HOLDS the chosen level, then decrescendos to ~silence by the deadline', async () => {
+  const eng = modernEngine();
+  const now = 1_000_000;
+  await eng.applyDesired({
+    verb: VERBS.START, gainLinear: 0.3, soundscape: 'white',
+    taper: true, nowMs: now, endsAtEpochMs: now + 45 * 60000, // 45-min session
+  });
+  const calls = eng.gain.gain.calls;
+  assert.ok(calls.some((c) => c[0] === 'set' && Math.abs(c[1] - 0.3) < 1e-6), 'holds AT the chosen gain for a while');
+  const linears = calls.filter((c) => c[0] === 'linear').map((c) => c[1]);
+  assert.ok(linears.some((v) => Math.abs(v - 0.3) < 1e-6), 'first swells up to the chosen level');
+  assert.ok(linears.some((v) => v <= 0.0002), 'then ramps down to near-silence by the deadline');
+  assert.equal(eng.getState(), STATES.PLAYING);
+  assert.equal(eng.getGain(), 0.3, 'reports the chosen level (the slider stays put), not the instantaneous fade value');
+});
+
+test('taper is inert without a sleep-timer deadline (ordinary fade-in instead)', async () => {
+  const eng = modernEngine();
+  await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'white', taper: true, nowMs: 1000 });
+  assert.ok(eng.gain.gain.calls.some((c) => c[0] === 'curve'), 'no deadline → normal 3s fade-in, no taper schedule');
+});
+
 test('MODERN: STOP ramps gain to ~0 but keeps the element playing (keep-alive)', async () => {
   const eng = modernEngine();
   await eng.applyDesired({ verb: VERBS.START, gainLinear: 0.3, soundscape: 'white' });
