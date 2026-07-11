@@ -45,7 +45,10 @@ cpSync(R('demo', 'rtc.html'), O('rtc', 'index.html'));
 const edit = (file, fn) => { writeFileSync(file, fn(readFileSync(file, 'utf8'))); };
 
 // Absolute /-rooted asset refs → page-relative (all app files live one dir below the site root).
-const toRelative = (s) => s.replace(/(["'(=])\/(shared\/|app\.css|icon-\d+\.png|player\/assets\/)/g, '$1../$2');
+// NOTE: keep this allowlist in sync with every root-absolute ref the apps use — `icons.js` (the SVG
+// icon module) was added later and, until listed here, shipped as `/icons.js` → 404 under the
+// project-pages subpath. The post-build guard below fails loudly if a root import ever slips through.
+const toRelative = (s) => s.replace(/(["'(=])\/(shared\/|icons\.js|app\.css|icon-\d+\.png|player\/assets\/)/g, '$1../$2');
 // The mock must patch WebSocket/fetch before the app module runs → inject it first.
 // rtc-hub must load BEFORE mock-hub (it may install the WebRTC bus on self.__MP_BUS__ that mock-hub reads).
 const injectMock = (html, appSrc) =>
@@ -64,6 +67,15 @@ edit(O('controller', 'controller.js'), (s) => disableSw(toRelative(s)));
 edit(O('player', 'audio.js'), (s) => s.replace(/\.\.\/\.\.\/shared\//g, '../shared/'));
 edit(O('player', 'manifest.webmanifest'), toRelative);
 edit(O('controller', 'manifest.webmanifest'), toRelative);
+
+// 4b) Fail loud on the exact bug that shipped once: a root-absolute import (`from '/…'`) resolves to
+//     the DOMAIN root, not the site root, so it 404s under a project-pages subpath (…github.io/<repo>/).
+//     After toRelative() every app-module import must be page-relative; if one isn't (e.g. a newly
+//     added `/icons.js`), throw so the demo can never deploy broken. (finding: demo subpath 404)
+for (const parts of [['player', 'player.js'], ['controller', 'controller.js'], ['player', 'audio.js']]) {
+  const rooted = readFileSync(O(...parts), 'utf8').match(/\bfrom\s+['"]\/[^'"]+['"]/g);
+  if (rooted) throw new Error(`[demo] ${parts.join('/')} keeps root-absolute import(s) that 404 under a subpath: ${rooted.join(', ')} — add the asset to toRelative()`);
+}
 
 // 5) Pages served straight (no Jekyll processing of the _-prefixed dirs / underscores).
 writeFileSync(O('.nojekyll'), '');
