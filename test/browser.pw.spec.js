@@ -276,6 +276,43 @@ test('loading the controller with an already-offline room does not alarm (even w
   await ctx.close();
 });
 
+test('opening the controller primes the alarm SILENTLY, never audibly (user: "siren on open")', async ({ browser }) => {
+  // The alarm <audio> is unlocked on first interaction, but the prime must never be audible or it
+  // startles the child. Guarantee: every play() during prime is muted AND volume 0, and the app does
+  // NOT switch the audio session to 'playback' at prime (a playback session plays over the iOS mute
+  // switch, defeating `muted`). Stub Audio + navigator.audioSession before any app code runs.
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.addInitScript(() => {
+    window.__plays = [];
+    window.__sessionTypes = [];
+    let sessionType = 'auto';
+    try {
+      Object.defineProperty(navigator, 'audioSession', {
+        configurable: true,
+        get: () => ({ get type() { return sessionType; }, set type(v) { sessionType = v; window.__sessionTypes.push(v); } }),
+      });
+    } catch (e) { /* some engines forbid redefining navigator props — the muted/volume check still holds */ }
+    window.Audio = function (src) {
+      return {
+        _src: src, loop: false, muted: false, volume: 1, currentTime: 0,
+        setAttribute() {}, pause() {},
+        play() { window.__plays.push({ muted: this.muted, volume: this.volume }); return Promise.resolve(); },
+        get src() { return this._src; }, set src(v) { this._src = v; },
+      };
+    };
+  });
+  await page.goto('/controller/');
+  // Fire the first-interaction prime WITHOUT touching a control (a bare click bubbling to document).
+  await page.evaluate(() => document.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await page.waitForTimeout(300); // let the prime's play() promise settle
+  const { plays, sessions } = await page.evaluate(() => ({ plays: window.__plays, sessions: window.__sessionTypes }));
+  expect(plays.length).toBeGreaterThanOrEqual(1); // the prime did run
+  for (const p of plays) expect(p.muted && p.volume === 0).toBeTruthy(); // every open-time play is silenced
+  expect(sessions).not.toContain('playback'); // no over-the-mute-switch session armed just by opening
+  await ctx.close();
+});
+
 test('cards form an accordion: rooms + Sounds collapsed, "This device" open; one at a time', async ({ browser }) => {
   const ctx = await browser.newContext();
   const player = await ctx.newPage();
