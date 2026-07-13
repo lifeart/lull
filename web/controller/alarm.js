@@ -49,23 +49,33 @@ export function primeAlarm() {
     alarmEl = new Audio(alarmToneDataUri());
     alarmEl.loop = true;
     alarmEl.setAttribute('playsinline', '');
-    // Over-mute: play the alarm through the media session so the ring/silent switch can't gag it.
-    if ('audioSession' in navigator) { try { navigator.audioSession.type = 'playback'; } catch (e) { console.warn('alarm audioSession failed', e); } }
-    // Unlock the element inside this gesture so a later, gesture-less alarm can start it. Guard the
-    // callback so if an alarm has ALREADY started (startAlarm raced the still-pending prime) we
-    // neither pause it nor leave it muted — the first alarm must always be audible. (review finding #3)
+    // Silence the prime HARD: muted (honored by the default iOS session) + volume 0 (desktop belt if
+    // a browser is lax about `muted` during play()). Crucially we do NOT switch the audio session to
+    // 'playback' here — a playback session makes iOS play the element OVER the mute switch, defeating
+    // `muted` and leaking a blip of the siren the moment the app is first tapped. 'playback' is armed
+    // only when a real alarm fires (startAlarm); the gesture-unlock this play() grants survives that.
+    // (user report: "siren plays the moment I open the controller")
     alarmEl.muted = true;
-    alarmEl.play().then(() => { if (!active) { alarmEl.pause(); alarmEl.currentTime = 0; } alarmEl.muted = false; })
-      .catch(() => { alarmEl.muted = false; });
+    alarmEl.volume = 0;
+    // Leave it muted while idle — startAlarm() is the only place that unmutes. If an alarm already
+    // started during the prime (active), don't pause it — it must stay audible. (review finding #3)
+    alarmEl.play().then(() => { if (!active) { alarmEl.pause(); alarmEl.currentTime = 0; } })
+      .catch((e) => console.warn('alarm prime play blocked', e));
   } catch (e) { console.warn('alarm element prime failed', e); }
 }
 
 export function startAlarm() {
   if (active) return;
   active = true;
-  // Over-mute path (primary on iOS). Force unmute in case a prime is still in flight. (review finding #3)
+  // Over-mute path (primary on iOS). Arm the playback session NOW (not at prime — see primeAlarm) so
+  // the tone plays over the ring/silent switch, then unmute, restore volume and play. No src swap:
+  // the element kept the tone loaded and its gesture-unlock, so it plays without a fresh gesture.
   if (alarmEl) {
-    try { alarmEl.muted = false; alarmEl.currentTime = 0; alarmEl.play().catch(() => {}); } catch (e) { console.warn('alarm play failed', e); }
+    try {
+      if ('audioSession' in navigator) { try { navigator.audioSession.type = 'playback'; } catch (e) { console.warn('alarm audioSession failed', e); } }
+      alarmEl.muted = false; alarmEl.volume = 1; alarmEl.currentTime = 0;
+      alarmEl.play().catch((e) => console.warn('alarm element play blocked', e));
+    } catch (e) { console.warn('alarm play failed', e); }
   }
   if (ctx) {
     // The context may have been suspended while the phone was idle/backgrounded — exactly when
