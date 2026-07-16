@@ -193,9 +193,9 @@ function reconcileAlarms(next) {
     const lvl = (d.reported || {}).micLevel;
     if (typeof lvl === 'number') {
       const m = micHigh.get(d.deviceId) || { count: 0 };
-      if (lvl >= CRY_ON) m.count++; else if (lvl < CRY_OFF) m.count = 0;
+      if (lvl >= CRY_ON) m.count++; else if (lvl < CRY_OFF) { m.count = 0; m.dismissed = false; } // quiet again → re-arm
       const alreadyCrying = alarmKind === 'cry' && alarmDeviceId === d.deviceId;
-      if (m.count >= CRY_SUSTAIN && !alreadyCrying) raiseAlarm(d.deviceId, 'possible crying — loud in the room', 'cry');
+      if (m.count >= CRY_SUSTAIN && !alreadyCrying && !m.dismissed) raiseAlarm(d.deviceId, 'possible crying — loud in the room', 'cry');
       if (alreadyCrying && lvl < CRY_OFF) {
         const name = d.friendlyName || d.deviceId;
         stopAlarm(); $('alarmText').innerHTML = icon('check') + ' ' + esc(name) + ' quiet again'; alarmDeviceId = null; alarmKind = null; m.count = 0;
@@ -211,7 +211,8 @@ function sendCommand(deviceId, fields, kind = 'command') {
   primeAlarm();
   const cmd = makeCommand(Object.assign({ target: deviceId }, fields));
   const timer = setTimeout(() => onAckTimeout(cmd.cmdId), ACK_TIMEOUT_MS);
-  pending.set(cmd.cmdId, { deviceId, timer, kind });
+  // verb decides how loud a failure is: only a failed START sirens (see raiseNotice).
+  pending.set(cmd.cmdId, { deviceId, timer, kind, verb: fields && fields.verb });
   if (fields && fields.verb === VERBS.START) markStarting(deviceId); // show "starting…" until it plays
   send(cmd);
 }
@@ -227,7 +228,7 @@ function onAck(msg) {
   if (p.kind === 'health') { (msg.ok ? health.ok : health.fail).add(p.deviceId); updateHealth(); return; } // silent (P3)
   // A start that failed to reach audible playback: drop the "starting…" spinner (the alarm below
   // takes over). A successful start keeps the spinner until the room actually reports PLAYING.
-  if (!msg.ok) { clearStarting(p.deviceId); raiseAlarm(p.deviceId, msg.error || 'device did not accept the command'); }
+  if (!msg.ok) { clearStarting(p.deviceId); commandFailed(p, msg.error || 'device did not accept the command'); }
 }
 function onAckTimeout(cmdId) {
   const p = pending.get(cmdId);
@@ -235,8 +236,17 @@ function onAckTimeout(cmdId) {
   pending.delete(cmdId);
   if (p.kind === 'probe' && preflight && preflight.need.has(p.deviceId)) { preflight.fail.add(p.deviceId); updatePreflight(); }
   if (p.kind === 'health') { if (health) { health.fail.add(p.deviceId); updateHealth(); } return; } // silent (P3)
-  clearStarting(p.deviceId); // no response → stop the spinner; the alarm takes over
-  raiseAlarm(p.deviceId, 'no response within 3s — device may be asleep or offline');
+  clearStarting(p.deviceId); // no response → stop the spinner; the alarm/notice takes over
+  commandFailed(p, 'no response within 3s — device may be asleep or offline');
+}
+// Only a failed START intent is an emergency worth the siren (the parent believes the room is
+// covering the baby and it isn't). Every other unacknowledged command — picking a sound, a volume
+// or timer tweak, a probe — while the parent is right there looking at the phone gets the banner
+// WITHOUT the siren. (user report: "I open the app at night, pick a sound and the siren goes off"
+// — a sleeping room that missed a setSound must not wake the house.)
+function commandFailed(p, why) {
+  if (p.verb === VERBS.START) raiseAlarm(p.deviceId, why);
+  else raiseNotice(p.deviceId, why);
 }
 
 let alarmDeviceId = null; // the device that raised the ACTIVE alarm (for P5 auto-de-escalation)
@@ -255,7 +265,22 @@ function raiseAlarm(deviceId, why, kind = 'failure') {
   $('alarmText').innerHTML = (kind === 'cry' ? icon('baby') : icon('warning')) + ' ' + esc(name) + ': ' + esc(why);
   startAlarm();
 }
-function clearAlarm() { stopAlarm(); alarmDeviceId = null; alarmKind = null; $('alarmBanner').hidden = true; }
+// Visual-only warning: the alarm banner WITHOUT the siren. Never overwrites an active real alarm.
+function raiseNotice(deviceId, why) {
+  if (alarmKind) return; // a real (sounding) alarm owns the banner
+  const d = devices.find((x) => x.deviceId === deviceId);
+  const name = d ? d.friendlyName : deviceId;
+  $('alarmBanner').hidden = false;
+  $('alarmText').innerHTML = icon('warning') + ' ' + esc(name) + ': ' + esc(why);
+}
+function clearAlarm() {
+  // Dismissing a cry alarm must STICK: the room's level stays high for a while (or the mic hears
+  // the noise machine itself), and without this the still-high count re-fires the siren on the
+  // very next telemetry tick — an undismissable alarm in the middle of the night. Hold that
+  // device's cry alarm until it has gone genuinely quiet (below CRY_OFF) once.
+  if (alarmKind === 'cry' && alarmDeviceId) micHigh.set(alarmDeviceId, { count: 0, dismissed: true });
+  stopAlarm(); alarmDeviceId = null; alarmKind = null; $('alarmBanner').hidden = true;
+}
 
 // --- ambient health / auto pre-flight (P3) --------------------------------------------------------
 // A SILENT, continuous liveness check (on connect, on foreground, every 60s) that drives a persistent
@@ -1058,6 +1083,13 @@ const soundsCard = $('soundsCard');
 soundsCard.addEventListener('drop', (e) => { const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) uploadFile(f); });
 document.addEventListener('click', primeAlarm, { once: true });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch((e) => console.warn('sw reg failed', e));
+// Show which build the hub is serving RIGHT NOW (the content hash the hub injects into sw.js) so
+// "did my redeploy actually take?" is answerable at a glance — bypass every cache. Static hosts
+// (the Pages demo) serve the un-injected literal; no hex hash matches → the line stays hidden.
+fetch('sw.js', { cache: 'no-store' }).then((r) => r.text()).then((src) => {
+  const m = src.match(/mp-controller-shell-([0-9a-f]{8,})/);
+  if (m) { const el = $('buildLine'); el.textContent = 'build ' + m[1]; el.hidden = false; console.log('[lull] build', m[1]); }
+}).catch((e) => console.warn('build line unavailable', e));
 window.addEventListener('online', () => { if (!ws) connect(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { if (!ws) connect(); else runHealthCheck(); } });
 setupTokenUI();

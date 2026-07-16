@@ -68,9 +68,13 @@ export function primeAlarm() {
     alarmEl.muted = true;
     alarmEl.volume = 0;
     alarmEl.play().then(() => {
-      // An alarm fired while the prime's play() was settling — escalate to the audible tone NOW
-      // (startAlarm ran with only the silent src loaded). (review finding #3)
-      if (active) { soundTheAlarm(); return; }
+      // If a real alarm fired while the prime's play() was settling, startAlarm has already swapped
+      // in the tone and is sounding it — don't pause it. (review finding #3) Deliberate asymmetry:
+      // an alarm that went active BEFORE the first tap stays banner-only — the parent is at the
+      // phone and looking at it, and the first tap of a night visit must NEVER itself blast the
+      // siren (user report: siren mid-night right after opening the app). It sounds normally the
+      // next time it's raised after the prime.
+      if (active) return;
       alarmEl.pause();
       // Swap in the real tone while the tap's transient user activation is still live, so the load
       // happens under the gesture and the unlock carries over to the alarm sound. The element stays
