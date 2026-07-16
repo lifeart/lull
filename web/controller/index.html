@@ -93,6 +93,9 @@
       <p id="uploadStatus" class="muted" aria-live="polite" style="margin:8px 0 0" hidden></p>
       <input id="fileInput" type="file" accept="audio/*" hidden />
     </div>
+
+    <!-- Which code the hub is actually serving (content hash) — the "did my redeploy take?" check. -->
+    <p id="buildLine" class="faint mono" style="text-align:center; font-size:11px; margin:18px 0 4px" hidden></p>
   </main>
 
   <!-- Screen dimmed to black (control channel stays live); a faint breathing dot confirms it's alive. -->

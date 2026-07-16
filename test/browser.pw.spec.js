@@ -322,6 +322,41 @@ test('loading the controller with an already-offline room does not alarm (even w
   await ctx.close();
 });
 
+// A room that is CONNECTED but not answering (an iPad whose tab went to sleep): picking a sound for
+// it must NOT blast the siren — the parent is right there looking at the phone; the banner is
+// enough. Only a failed START intent is siren-worthy (the parent believes the room is covering the
+// baby and it isn't). (user: "I open the app at night, pick a sound and the siren goes off")
+test('unresponsive room: a failed sound pick shows the banner WITHOUT the siren; a failed start still sirens', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  // A protocol-level player that never ACKs any command (the ws lib still answers keepalive pings,
+  // so the hub keeps it "online" — exactly like a suspended-but-connected device).
+  const mute = new WebSocket(`ws://localhost:${PORT}/ws`);
+  await new Promise((res, rej) => { mute.on('open', res); mute.on('error', rej); });
+  mute.send(JSON.stringify(makeHello({ role: ROLES.PLAYER, deviceId: 'pw-mute-room', friendlyName: 'MuteRoom', caps: {} })));
+
+  const controller = await ctx.newPage();
+  await controller.addInitScript(() => localStorage.setItem('mp.alarmDrop', '1')); // even opted-in, a sound pick stays quiet
+  await captureAlarmAudio(controller);
+  await controller.goto('/controller/');
+  const card = controller.locator('.card', { hasText: 'MuteRoom' });
+  await expect(card).toBeVisible({ timeout: 10000 });
+  await expandCard(card);
+  await card.locator('.sound .chips button').first().click(); // SET_SOUNDSCAPE → no ACK → 3s timeout
+  await expect(controller.locator('#alarmBanner')).toBeVisible({ timeout: 10000 });
+  await expect(controller.locator('#alarmText')).toContainText('no response');
+  const quiet = await controller.evaluate(() => window.__plays.filter((p) => !p.muted).length);
+  expect(quiet).toBe(0); // banner only — nothing audible was played
+
+  // The same dead room failing a START is the real emergency — the siren still fires.
+  await card.getByRole('button', { name: 'Start' }).click();
+  await expect.poll(
+    () => controller.evaluate(() => window.__plays.filter((p) => !p.muted && p.volume === 1).length),
+    { timeout: 10000 },
+  ).toBeGreaterThanOrEqual(1);
+  mute.close();
+  await ctx.close();
+});
+
 test('the first tap (on the "This device" header) primes the alarm with digital SILENCE, never audibly', async ({ browser }) => {
   // The alarm <audio> is unlocked on the first interaction — for the reporting user, tapping the
   // "This device" card header right after opening the app. The prime must be inaudible EVERYWHERE:
