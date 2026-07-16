@@ -17,9 +17,9 @@ let vibrateTimer = null;
 let active = false;
 let alarmEl = null;
 
-// A short looping alarm tone as a data URI (no asset fetch needed). Alternating 880/660 Hz square
-// wave — a deliberately alarm-like two-tone. Generated once.
-function alarmToneDataUri() {
+// Short looping WAVs as data URIs (no asset fetch needed). sampleAt(t) returns the PCM sample
+// in [-1, 1] at time t seconds.
+function wavDataUri(sampleAt) {
   const sr = 8000, dur = 0.6, n = Math.floor(sr * dur);
   const buf = new Uint8Array(44 + n * 2);
   const view = new DataView(buf.buffer);
@@ -28,16 +28,25 @@ function alarmToneDataUri() {
   view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
   view.setUint32(24, sr, true); view.setUint32(28, sr * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
   wr(36, 'data'); view.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) {
-    const t = i / sr;
-    const freq = (Math.floor(t / 0.15) % 2) ? 660 : 880;
-    const s = Math.sign(Math.sin(2 * Math.PI * freq * t)) * 0.5;
-    view.setInt16(44 + i * 2, s * 32767, true);
-  }
+  for (let i = 0; i < n; i++) view.setInt16(44 + i * 2, sampleAt(i / sr) * 32767, true);
   let bin = '';
   for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
   return 'data:audio/wav;base64,' + btoa(bin);
 }
+
+// The alarm tone: alternating 880/660 Hz square wave — a deliberately alarm-like two-tone.
+let toneUri = null;
+function alarmToneDataUri() {
+  if (!toneUri) toneUri = wavDataUri((t) => {
+    const freq = (Math.floor(t / 0.15) % 2) ? 660 : 880;
+    return Math.sign(Math.sin(2 * Math.PI * freq * t)) * 0.5;
+  });
+  return toneUri;
+}
+
+// Pure digital silence (all-zero PCM) — what the prime plays. Inaudible on EVERY engine no matter
+// how `muted`/`volume` are treated, unlike a muted play of the siren tone (see primeAlarm).
+function silenceDataUri() { return wavDataUri(() => 0); }
 
 // Must be primed from a user gesture once (browsers block audio otherwise). The controller
 // primes it on first interaction. Sets up BOTH sound paths and unlocks the <audio> element.
@@ -46,37 +55,53 @@ export function primeAlarm() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (AC) { ctx = new AC(); ctx.resume().catch(() => {}); }
   try {
-    alarmEl = new Audio(alarmToneDataUri());
+    // Unlock the element by playing PURE DIGITAL SILENCE, never the siren tone. iOS ignores
+    // `volume` writes on media elements and has a history of not honoring `muted` on <audio>, so a
+    // muted play() of the tone can still be audible — the siren blipped on the first tap even after
+    // the muted-prime fix (user report: "I hear the alarm when I tap the This-device header after
+    // opening the app"). Zero PCM cannot make sound regardless of how muted/volume are treated;
+    // muted + volume 0 stay only as a belt for engines that do honor them. We also do NOT switch
+    // the audio session to 'playback' here — that too is armed only when a real alarm fires.
+    alarmEl = new Audio(silenceDataUri());
     alarmEl.loop = true;
     alarmEl.setAttribute('playsinline', '');
-    // Silence the prime HARD: muted (honored by the default iOS session) + volume 0 (desktop belt if
-    // a browser is lax about `muted` during play()). Crucially we do NOT switch the audio session to
-    // 'playback' here — a playback session makes iOS play the element OVER the mute switch, defeating
-    // `muted` and leaking a blip of the siren the moment the app is first tapped. 'playback' is armed
-    // only when a real alarm fires (startAlarm); the gesture-unlock this play() grants survives that.
-    // (user report: "siren plays the moment I open the controller")
     alarmEl.muted = true;
     alarmEl.volume = 0;
-    // Leave it muted while idle — startAlarm() is the only place that unmutes. If an alarm already
-    // started during the prime (active), don't pause it — it must stay audible. (review finding #3)
-    alarmEl.play().then(() => { if (!active) { alarmEl.pause(); alarmEl.currentTime = 0; } })
-      .catch((e) => console.warn('alarm prime play blocked', e));
+    alarmEl.play().then(() => {
+      // An alarm fired while the prime's play() was settling — escalate to the audible tone NOW
+      // (startAlarm ran with only the silent src loaded). (review finding #3)
+      if (active) { soundTheAlarm(); return; }
+      alarmEl.pause();
+      // Swap in the real tone while the tap's transient user activation is still live, so the load
+      // happens under the gesture and the unlock carries over to the alarm sound. The element stays
+      // paused + muted — startAlarm() (via soundTheAlarm) is the only place that unmutes and plays.
+      alarmEl.src = alarmToneDataUri();
+      alarmEl.load();
+    }).catch((e) => console.warn('alarm prime play blocked', e));
   } catch (e) { console.warn('alarm element prime failed', e); }
+}
+
+// Make the (gesture-unlocked) element blast the tone: arm the over-the-mute-switch session, ensure
+// the tone is loaded (the prime may not have swapped it in yet), unmute and play.
+function soundTheAlarm() {
+  if (!alarmEl) return;
+  try {
+    if ('audioSession' in navigator) { try { navigator.audioSession.type = 'playback'; } catch (e) { console.warn('alarm audioSession failed', e); } }
+    const tone = alarmToneDataUri();
+    if (alarmEl.src !== tone) alarmEl.src = tone; // a fresh load starts at 0
+    else alarmEl.currentTime = 0;
+    alarmEl.muted = false; alarmEl.volume = 1;
+    alarmEl.play().catch((e) => console.warn('alarm element play blocked', e));
+  } catch (e) { console.warn('alarm play failed', e); }
 }
 
 export function startAlarm() {
   if (active) return;
   active = true;
-  // Over-mute path (primary on iOS). Arm the playback session NOW (not at prime — see primeAlarm) so
-  // the tone plays over the ring/silent switch, then unmute, restore volume and play. No src swap:
-  // the element kept the tone loaded and its gesture-unlock, so it plays without a fresh gesture.
-  if (alarmEl) {
-    try {
-      if ('audioSession' in navigator) { try { navigator.audioSession.type = 'playback'; } catch (e) { console.warn('alarm audioSession failed', e); } }
-      alarmEl.muted = false; alarmEl.volume = 1; alarmEl.currentTime = 0;
-      alarmEl.play().catch((e) => console.warn('alarm element play blocked', e));
-    } catch (e) { console.warn('alarm play failed', e); }
-  }
+  // Over-mute path (primary on iOS). Arm the playback session NOW (not at prime — see primeAlarm)
+  // so the tone plays over the ring/silent switch, then unmute and play. The element kept its
+  // gesture-unlock from the silent prime, so the tone plays without a fresh gesture.
+  soundTheAlarm();
   if (ctx) {
     // The context may have been suspended while the phone was idle/backgrounded — exactly when
     // the alarm matters. Resume it (async is fine; nodes started on a suspended ctx sound once
