@@ -43,6 +43,44 @@ async function expandSounds(page) {
   await expect(s).not.toHaveClass(/(^|\s)collapsed(\s|$)/);
 }
 
+// Capture every <audio> play() a controller page performs (the parent-phone alarm path): the
+// muted/volume flags AND the src at the moment of play, so a test can decode the PCM and prove what
+// would have been heard. Also records navigator.audioSession.type writes ('playback' is the
+// over-the-iOS-mute-switch mode). Must run before any app code.
+function captureAlarmAudio(page) {
+  return page.addInitScript(() => {
+    window.__plays = [];
+    window.__sessionTypes = [];
+    window.__audioEls = [];
+    let sessionType = 'auto';
+    try {
+      Object.defineProperty(navigator, 'audioSession', {
+        configurable: true,
+        get: () => ({ get type() { return sessionType; }, set type(v) { sessionType = v; window.__sessionTypes.push(v); } }),
+      });
+    } catch (e) { /* some engines forbid redefining navigator props — the PCM checks still hold */ }
+    window.Audio = function (src) {
+      const el = {
+        _src: src || '', loop: false, muted: false, volume: 1, currentTime: 0,
+        setAttribute() {}, pause() {}, load() {},
+        play() { window.__plays.push({ muted: this.muted, volume: this.volume, src: this._src }); return Promise.resolve(); },
+        get src() { return this._src; }, set src(v) { this._src = v; },
+      };
+      window.__audioEls.push(el);
+      return el;
+    };
+  });
+}
+
+// Whether every 16-bit PCM sample in a data:audio/wav;base64 URI is zero. Digital silence is the
+// only thing the alarm prime may play — iOS ignores `volume` writes and can ignore `muted` on
+// <audio>, so the muted/volume flags alone are no guarantee of silence.
+function wavIsSilent(dataUri) {
+  const buf = Buffer.from(String(dataUri).split(',')[1] || '', 'base64');
+  for (let i = 44; i + 1 < buf.length; i += 2) if (buf.readInt16LE(i) !== 0) return false;
+  return true;
+}
+
 // A throwaway controller over ws (Node side) to inject commands the UI can't (e.g. a short timer).
 function nodeCommand(deviceId, fields) {
   return new Promise((resolve, reject) => {
@@ -209,6 +247,7 @@ test('offline device raises the alarm on the parent phone (when the drop alarm i
 
   const controller = await ctx.newPage();
   await controller.addInitScript(() => localStorage.setItem('mp.alarmDrop', '1')); // opt in (off by default)
+  await captureAlarmAudio(controller); // prove the siren is AUDIBLE, not just the banner
   await controller.goto('/controller/');
   const card = controller.locator('.card', { hasText: 'NurseryO' });
   await expect(card).toBeVisible({ timeout: 10000 });
@@ -219,6 +258,13 @@ test('offline device raises the alarm on the parent phone (when the drop alarm i
   await player.close(); // a PLAYING device goes offline -> reconcileAlarms fires the alarm
   await expect(controller.locator('#alarmBanner')).toBeVisible({ timeout: 10000 });
   await expect(controller.locator('#alarmText')).toContainText('NurseryO');
+  // The <audio> siren really sounded: an unmuted full-volume play of the REAL tone (not the silent
+  // unlock src the prime uses), with the over-the-iOS-mute-switch 'playback' session armed.
+  const { plays, sessions } = await controller.evaluate(() => ({ plays: window.__plays, sessions: window.__sessionTypes }));
+  const audible = plays.filter((p) => !p.muted && p.volume === 1);
+  expect(audible.length).toBeGreaterThanOrEqual(1);
+  for (const p of audible) expect(wavIsSilent(p.src)).toBe(false);
+  expect(sessions).toContain('playback');
   await controller.click('#alarmDismiss');
   await expect(controller.locator('#alarmBanner')).toBeHidden();
   await ctx.close();
@@ -276,40 +322,39 @@ test('loading the controller with an already-offline room does not alarm (even w
   await ctx.close();
 });
 
-test('opening the controller primes the alarm SILENTLY, never audibly (user: "siren on open")', async ({ browser }) => {
-  // The alarm <audio> is unlocked on first interaction, but the prime must never be audible or it
-  // startles the child. Guarantee: every play() during prime is muted AND volume 0, and the app does
-  // NOT switch the audio session to 'playback' at prime (a playback session plays over the iOS mute
-  // switch, defeating `muted`). Stub Audio + navigator.audioSession before any app code runs.
+test('the first tap (on the "This device" header) primes the alarm with digital SILENCE, never audibly', async ({ browser }) => {
+  // The alarm <audio> is unlocked on the first interaction — for the reporting user, tapping the
+  // "This device" card header right after opening the app. The prime must be inaudible EVERYWHERE:
+  // iOS ignores `volume` writes and can ignore `muted` on <audio>, so a muted play() of the siren
+  // tone can still blip (user: "I hear the alarm when I click the This-device header after app
+  // start"). Guarantee: every play() at prime is all-zero PCM (plus muted + volume 0 as a belt),
+  // and the app does NOT arm the over-the-mute-switch 'playback' session until a real alarm fires.
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
-  await page.addInitScript(() => {
-    window.__plays = [];
-    window.__sessionTypes = [];
-    let sessionType = 'auto';
-    try {
-      Object.defineProperty(navigator, 'audioSession', {
-        configurable: true,
-        get: () => ({ get type() { return sessionType; }, set type(v) { sessionType = v; window.__sessionTypes.push(v); } }),
-      });
-    } catch (e) { /* some engines forbid redefining navigator props — the muted/volume check still holds */ }
-    window.Audio = function (src) {
-      return {
-        _src: src, loop: false, muted: false, volume: 1, currentTime: 0,
-        setAttribute() {}, pause() {},
-        play() { window.__plays.push({ muted: this.muted, volume: this.volume }); return Promise.resolve(); },
-        get src() { return this._src; }, set src(v) { this._src = v; },
-      };
-    };
-  });
+  await captureAlarmAudio(page);
   await page.goto('/controller/');
-  // Fire the first-interaction prime WITHOUT touching a control (a bare click bubbling to document).
-  await page.evaluate(() => document.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  const head = page.locator('#localPlayer .cardhead');
+  await head.waitFor(); // the card renders once the sound library loads
+  await head.locator('strong').click(); // the user's exact repro: the FIRST tap is the card title
+  await expect(page.locator('#localPlayer')).toHaveClass(/(^|\s)collapsed(\s|$)/); // the tap only toggled the accordion
   await page.waitForTimeout(300); // let the prime's play() promise settle
-  const { plays, sessions } = await page.evaluate(() => ({ plays: window.__plays, sessions: window.__sessionTypes }));
+  const { plays, sessions, els } = await page.evaluate(() => ({
+    plays: window.__plays, sessions: window.__sessionTypes,
+    els: window.__audioEls.map((e) => ({ src: e.src, muted: e.muted })),
+  }));
   expect(plays.length).toBeGreaterThanOrEqual(1); // the prime did run
-  for (const p of plays) expect(p.muted && p.volume === 0).toBeTruthy(); // every open-time play is silenced
+  for (const p of plays) {
+    expect(p.muted && p.volume === 0).toBeTruthy(); // belt: silenced where muted/volume are honored…
+    expect(wavIsSilent(p.src)).toBe(true); // …and the samples themselves are pure silence everywhere
+  }
   expect(sessions).not.toContain('playback'); // no over-the-mute-switch session armed just by opening
+  // After the unlock the element must hold the REAL tone (still muted, never played) so a genuine
+  // alarm can sound later without a fresh gesture. Other Audio constructions exist (detectCaps()
+  // probes element volume with src-less throwaways) — the alarm element is the one with a WAV src.
+  const alarmEls = els.filter((e) => String(e.src).indexOf('data:audio/wav') === 0);
+  expect(alarmEls.length).toBe(1);
+  expect(wavIsSilent(alarmEls[0].src)).toBe(false);
+  expect(alarmEls[0].muted).toBe(true);
   await ctx.close();
 });
 
